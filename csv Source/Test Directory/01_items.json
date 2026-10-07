@@ -4,12 +4,12 @@
     "ItemID"
   ],
   "foreignKeys": {
-    "Helow": {
+    "testForign": {
       "columns": [
-        "SellPrice",
-        "IsTradable"
+        "ItemName",
+        "DisplayText"
       ],
-      "targetTable": "csv Source\\candidate_key_test_100rows_10cols.csv"
+      "targetTable": "csv Source\\02_skills_composite_key.csv"
     }
   },
   "candidateKeys": [

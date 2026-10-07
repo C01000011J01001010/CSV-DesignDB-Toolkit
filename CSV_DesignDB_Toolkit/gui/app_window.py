@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 from utils import get_initial_dir, find_workspace_root, create_workspace_root
 from core.converter import convert_xlsx_file, convert_ansi_csv_to_utf8
 from core.candidate_finder import find_candidate_keys
-from core.validator import run_global_validation # 💡 [NEW] validator import
+from core.validator import run_global_validation
 from core.watcher import PipelineWatcher
 
 from gui.left_panel import LeftPanel
@@ -56,6 +56,12 @@ class AppGUI(tk.Tk):
             self.right_panel.log("⚠️ 워크스페이스(.root)를 찾지 못했습니다.")
             self.lbl_workspace.config(text="⚠️ 워크스페이스 미설정 (기능 제한)")
 
+    def _restart_watcher_if_needed(self):
+        if self.watcher.is_watching and self.workspace_root:
+            self.watcher.stop()
+            self.watcher.start(self.workspace_root, True) # 💡 무조건 Root 기준 재귀 감시
+            self.right_panel.log("🔄 워크스페이스 전체 감시기 재시작 완료.")
+
     def change_workspace_manual(self):
         selected_dir = filedialog.askdirectory(title="워크스페이스 폴더 선택 (기존 로드 또는 새로 생성)", initialdir=self.target_dir)
         if not selected_dir:
@@ -68,6 +74,7 @@ class AppGUI(tk.Tk):
             self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
             self.right_panel.log(f"🔄 워크스페이스 변경됨: {self.workspace_file}")
             self.change_dir_force(w_root)
+            self._restart_watcher_if_needed()
         else:
             proj_name = simpledialog.askstring("워크스페이스 초기화", "선택한 폴더에 데이터베이스 루트를 생성하려면 프로젝트 명을 입력하세요:")
             if proj_name:
@@ -78,6 +85,7 @@ class AppGUI(tk.Tk):
                     self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
                     self.right_panel.log(f"✅ 새 워크스페이스 생성됨: {self.workspace_file}")
                     self.change_dir_force(w_root)
+                    self._restart_watcher_if_needed()
                 else:
                     messagebox.showwarning("오류", "루트 파일 생성에 실패했습니다.")
 
@@ -176,7 +184,7 @@ class AppGUI(tk.Tk):
         if hasattr(self.left_panel.app, 'btn1'): self.left_panel.app.btn1.config(state=flag)
         if hasattr(self.left_panel.app, 'btn2'): self.left_panel.app.btn2.config(state=flag)
         if hasattr(self.left_panel.app, 'btn4'): self.left_panel.app.btn4.config(state=flag)
-        if hasattr(self.left_panel.app, 'btn_validate'): self.left_panel.app.btn_validate.config(state=flag) # 💡 [NEW] 검증 버튼
+        if hasattr(self.left_panel.app, 'btn_validate'): self.left_panel.app.btn_validate.config(state=flag)
 
     def set_progress(self, value):
         self.after(0, lambda: self.progress_var.set(value))
@@ -203,10 +211,7 @@ class AppGUI(tk.Tk):
         self.target_dir = new_dir
         self.path_entry_var.set(self.target_dir)
         self.right_panel.log(f"\n📂 작업 경로(포커스) 변경됨: {self.target_dir}")
-        if self.watcher.is_watching:
-            self.right_panel.log("🔄 감시기 재시작...")
-            self.watcher.stop()
-            self.watcher.start(self.target_dir, self.include_subdirs.get())
+        # 작업 폴더 변경 시 하위 폴더 갱신
         if hasattr(self.left_panel, '_t1_refresh_files'):
             self.left_panel._t1_refresh_files()
 
@@ -230,6 +235,7 @@ class AppGUI(tk.Tk):
                     self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
                     self.right_panel.log(f"🔄 워크스페이스 변경됨: {self.workspace_file}")
                     self.change_dir_force(new_dir)
+                    self._restart_watcher_if_needed()
                 else:
                     self.right_panel.log("⚠️ 이동 취소: 기존 워크스페이스 유지를 선택했습니다.")
                     self.path_entry_var.set(self.target_dir) 
@@ -245,9 +251,7 @@ class AppGUI(tk.Tk):
     def on_option_changed(self):
         state = "포함" if self.include_subdirs.get() else "제외"
         self.right_panel.log(f"\n⚙️ 옵션 변경: 하위 폴더 {state}")
-        if self.watcher.is_watching:
-            self.watcher.stop()
-            self.watcher.start(self.target_dir, self.include_subdirs.get())
+        # 감시기는 무조건 Root 재귀 검색이므로 옵션 변경 시 재시작 안 함
 
     def run_xlsx_to_csv_all(self):
         if not self.workspace_root:
@@ -295,9 +299,9 @@ class AppGUI(tk.Tk):
             messagebox.showwarning("경고", "워크스페이스가 설정되지 않았습니다.")
             return
         if not self.watcher.is_watching:
-            self.watcher.start(self.target_dir, self.include_subdirs.get())
+            self.watcher.start(self.workspace_root, True) # 💡 [FIX] 무조건 Root 전체 감시
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
-            self.right_panel.log(f"\n🕵️‍♂️ [자동 변환 감시 시작]")
+            self.right_panel.log(f"\n🕵️‍♂️ [자동 변환 감시 시작] (범위: {self.workspace_root} 전체)")
         else:
             self.watcher.stop()
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 자동 변환 감시 모드 시작", bg="#6C757D")
@@ -315,7 +319,6 @@ class AppGUI(tk.Tk):
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()
 
-    # 💡 [NEW] 글로벌 무결성 검증 태스크
     def run_global_validation(self):
         if not self.workspace_root:
             messagebox.showwarning("경고", "워크스페이스가 설정되지 않았습니다.")
@@ -324,7 +327,6 @@ class AppGUI(tk.Tk):
             self.set_buttons_state(False)
             self.set_progress(0)
             self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전체 데이터베이스 글로벌 검증")
-            # 💡 작업 경로가 아닌 "워크스페이스 전체"를 스캔하여 5대 무결성을 검증합니다.
             run_global_validation(self.workspace_root, self.right_panel.log, self.set_progress)
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()

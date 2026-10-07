@@ -3,21 +3,7 @@
   "primaryKey": [
     "ItemID"
   ],
-  "foreignKeys": {
-    "test1": {
-      "columns": [
-        "ItemID"
-      ],
-      "targetTable": "csv Source\\01_items.csv"
-    },
-    "test2": {
-      "columns": [
-        "ItemName",
-        "DisplayText"
-      ],
-      "targetTable": "csv Source\\02_skills_composite_key.csv"
-    }
-  },
+  "foreignKeys": {},
   "candidateKeys": [
     [
       "ItemID"

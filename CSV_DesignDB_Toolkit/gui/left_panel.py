@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import os
 import threading
 from gui.widgets import ScrollableFrame
@@ -16,13 +16,15 @@ class LeftPanel(tk.Frame):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
 
-        self.tab1 = tk.Frame(self.notebook, bg="#1E1E1E")
-        self.notebook.add(self.tab1, text="1. 스키마/제약조건")
-        self._build_tab1()
-
+        # 💡 [순서 변경] 기존의 2번 탭을 1번으로
         self.tab2 = tk.Frame(self.notebook, bg="#1E1E1E")
-        self.notebook.add(self.tab2, text="2. CSV 변환")
+        self.notebook.add(self.tab2, text="1. CSV 변환")
         self._build_tab2()
+
+        # 💡 [순서 변경] 기존의 1번 탭을 2번으로
+        self.tab1 = tk.Frame(self.notebook, bg="#1E1E1E")
+        self.notebook.add(self.tab1, text="2. 스키마/제약조건")
+        self._build_tab1()
         
         self.tab3 = tk.Frame(self.notebook, bg="#1E1E1E")
         self.notebook.add(self.tab3, text="3. 메타(후보키) 추출")
@@ -31,10 +33,20 @@ class LeftPanel(tk.Frame):
         self.tab4 = MetaEditorTab(self.notebook, self.app)
         self.notebook.add(self.tab4, text="4. 메타 관리(PK/FK)")
 
-        # 💡 [NEW] 신규 탭 추가
         self.tab5 = tk.Frame(self.notebook, bg="#1E1E1E")
         self.notebook.add(self.tab5, text="5. 전체 무결성 검증")
         self._build_tab5()
+
+        # 💡 [NEW] 탭 이동 이벤트 바인딩 (잠금 장치)
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+    def _on_tab_changed(self, event):
+        current_idx = self.notebook.index("current")
+        # 인덱스 0은 '1. CSV 변환' 탭. 그 외의 탭(1,2,3,4 인덱스)으로 갈 때 검사
+        if current_idx > 0:
+            if not self.app.watcher.is_watching:
+                messagebox.showwarning("안내", "DB 설계 및 검증 기능을 사용하려면\n먼저 [1. CSV 변환] 탭에서 '백그라운드 자동 변환 모드'를 켜주세요.")
+                self.notebook.select(0) # 다시 1번 탭으로 강제 복귀
 
     def _parse_raw_header(self, header_str):
         name = header_str
@@ -257,7 +269,6 @@ class LeftPanel(tk.Frame):
         self.app.progress_bar = ttk.Progressbar(inner, variable=self.app.progress_var, maximum=100)
         self.app.progress_bar.pack(fill="x", padx=10, pady=(0, 10))
 
-    # 💡 [NEW] 무결성 검증 탭 UI
     def _build_tab5(self):
         scroll_frame = ScrollableFrame(self.tab5)
         scroll_frame.pack(fill="both", expand=True)

@@ -1,6 +1,9 @@
 {
   "csvFileName": "05_levels_varied_keys.csv",
-  "primaryKey": [],
+  "primaryKey": [
+    "World",
+    "RecommendedPower"
+  ],
   "foreignKeys": {},
   "candidateKeys": [
     [
