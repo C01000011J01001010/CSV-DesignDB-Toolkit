@@ -61,7 +61,7 @@ def analyze_pk_status(target_dir, include_subdirs, on_log):
                     if "[]" in c_type:
                         pk_valid = False
                         pk_error_reasons.append(f"{c_name}(배열 타입 불가)")
-                    elif c_type not in ['int', 'string']:
+                    elif c_type not in ['int', 'string', 'bool', 'enum']:
                         pk_valid = False
                         pk_error_reasons.append(f"{c_name}(허용되지 않은 타입: {c_type})")
                     elif c_type == 'string':
@@ -69,7 +69,6 @@ def analyze_pk_status(target_dir, include_subdirs, on_log):
                             pk_valid = False
                             pk_error_reasons.append(f"{c_name}(데이터 내 '_' 포함)")
 
-        # Recommend Best PK
         recommendation_str = ""
         if c_keys_data.get('candidateKeys'):
             sorted_keys = sorted(c_keys_data['candidateKeys'], key=lambda x: len(x['columns']))
@@ -92,7 +91,7 @@ def analyze_pk_status(target_dir, include_subdirs, on_log):
 
     if needs_json:
         on_log("\n🚨 [우선 처리 요망] JSON 파일 누락")
-        on_log("   👉 아래 파일들은 '4. 최소 후보키 탐색' 작업을 먼저 실행해 JSON을 생성해야 합니다.")
+        on_log("   👉 아래 파일들은 '3. 최소 후보키 탐색' 작업을 먼저 실행해 JSON을 생성해야 합니다.")
         for f in needs_json:
             on_log(f"   - {f}.csv")
 

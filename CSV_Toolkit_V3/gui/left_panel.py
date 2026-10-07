@@ -44,7 +44,6 @@ class LeftPanel(tk.Frame):
         return name, c_type, constraints
 
     def _build_tab1(self):
-        # Top Global File Selector
         top_frame = tk.Frame(self.tab1, bg="#1E1E1E")
         top_frame.pack(fill="x", padx=10, pady=10)
         
@@ -57,7 +56,6 @@ class LeftPanel(tk.Frame):
         btn_load = tk.Button(top_frame, text="헤더 로드", font=("맑은 고딕", 9, "bold"), bg="#007ACC", fg="white", bd=0, command=self._t1_load_headers)
         btn_load.pack(side="left", padx=2)
 
-        # Sub Notebook for Type & Constraints
         self.sub_notebook = ttk.Notebook(self.tab1)
         self.sub_notebook.pack(fill="both", expand=True, padx=5, pady=5)
         
@@ -143,7 +141,6 @@ class LeftPanel(tk.Frame):
         ent_name.insert(0, name)
         ent_name.grid(row=row_idx, column=0, padx=5, pady=2)
         
-        # 💡 enum, enum[] 추가
         combo_type = ttk.Combobox(self.t1_1_rows_frame, state="readonly", width=20, 
                                   values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetId", "AssetId[]", "ForeignKey", "ForeignKey[]"])
         if ctype: combo_type.set(ctype)
@@ -205,7 +202,6 @@ class LeftPanel(tk.Frame):
             ctype = builder.col_type
             constraints = builder.get_constraints()
             
-            # 💡 빌더에서 자체 무결성 검사 실패(PK/REF 공존 등) 시 저장 차단
             if constraints is None:
                 self.app.right_panel.log(f"❌ '{name}' 컬럼에 논리적 모순이 있는 제약조건이 있어 저장을 취소합니다.")
                 return
@@ -275,7 +271,6 @@ class LeftPanel(tk.Frame):
         guide_frame = tk.Frame(inner, bg="#252526", bd=1, relief="solid")
         guide_frame.pack(fill="x", padx=10, pady=(15, 10))
         
-        # 💡 PK 가능 타입 안내 수정 (enum 추가)
         guide_text = (
             "📌 [PK(기본키) 검증 프로세스 규칙]\n\n"
             "• PK 가능 타입은 오직 'int', 'string', 'bool', 'enum' 뿐입니다. (배열 불가)\n"

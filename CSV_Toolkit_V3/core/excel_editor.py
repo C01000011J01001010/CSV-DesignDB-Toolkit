@@ -9,7 +9,6 @@ def get_excel_files(target_dir, recursive):
         for f in fnames:
             if f.endswith('.xlsx') and not f.startswith('~$'):
                 full_path = os.path.join(root, f)
-                # 루트 경로(target_dir)를 제외한 상대 경로만 추출
                 rel_path = os.path.relpath(full_path, target_dir)
                 files.append(rel_path)
     return files

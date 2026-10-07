@@ -14,7 +14,6 @@ def parse_constraint_string(c_str):
         val = c_str[c_str.find('(')+1 : c_str.rfind(')')].strip()
         return 'DEFAULT', {'value': val}
         
-    # 💡 값 구분자를 콤마(,)에서 파이프(|)로 변경
     if c_upper.startswith('CHECK IN') and '(' in c_str:
         inner = c_str[c_str.find('(')+1 : c_str.rfind(')')]
         vals = [v.strip() for v in inner.split('|') if v.strip()]
@@ -57,7 +56,6 @@ class ConstraintWidget(tk.Frame):
         top.pack(fill="x", padx=5, pady=2)
         tk.Label(top, text=c_type, bg="#333333", fg="#FFD700", font=("Consolas", 10, "bold")).pack(side="left")
         
-        # 💡 REF 등 고정 제약조건이면 삭제 버튼 숨김
         if not is_locked:
             tk.Button(top, text="🗑️", bg="#DC3545", fg="white", bd=0, padx=5, pady=0, font=("맑은 고딕", 8), command=self.destroy).pack(side="right")
         else:
@@ -115,7 +113,6 @@ class ConstraintWidget(tk.Frame):
         row.pack(fill="x", pady=2)
         
         is_first = len(self.conditions) == 0
-        
         logic_cb = ttk.Combobox(row, values=["AND", "OR", "XOR"], state="readonly", width=5)
         logic_cb.set(data.get('logic', 'AND') if data and not is_first else "AND")
         if not is_first: logic_cb.pack(side="left", padx=(0, 5))
@@ -145,7 +142,6 @@ class ConstraintWidget(tk.Frame):
         elif self.c_type in ['CHECK IN', 'CHECK NOT IN']:
             vals = [e.get() for e in self.entries if e.get().strip()]
             if not vals: return None
-            # 💡 값 구분자를 파이프(|)로 병합
             return f"{self.c_type}({'|'.join(vals)})"
         elif self.c_type == 'CHECK':
             conds = []
@@ -161,7 +157,6 @@ class ConstraintWidget(tk.Frame):
             return f"CHECK({''.join(conds)})"
         elif self.c_type == 'RAW':
             return self.entries[0].get()
-
 
 class ColumnConstraintBuilder(tk.Frame):
     def __init__(self, parent, col_name, col_type, constraints_list):
@@ -179,11 +174,9 @@ class ColumnConstraintBuilder(tk.Frame):
         add_frame = tk.Frame(header, bg="#252526")
         add_frame.pack(side="right")
         
-        # 💡 에러 메시지 라벨 추가
         self.lbl_error = tk.Label(add_frame, text="", bg="#252526", fg="#FF5555", font=("맑은 고딕", 9, "bold"))
         self.lbl_error.pack(side="left", padx=10)
         
-        # 💡 REF는 드롭박스에서 제거됨
         self.cb_type = ttk.Combobox(add_frame, values=["PK", "UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "CHECK IN", "CHECK NOT IN"], state="readonly", width=12)
         self.cb_type.set("PK")
         self.cb_type.pack(side="left", padx=5)
@@ -195,32 +188,27 @@ class ColumnConstraintBuilder(tk.Frame):
         for c_str in constraints_list:
             ctype, cdata = parse_constraint_string(c_str)
             is_locked = False
-            # 💡 타입이 AssetId/ForeignKey 계열일 경우 불러온 REF는 삭제 불가로 잠금
             if ctype == 'REF' and col_type.lower() in ["assetid", "assetid[]", "foreignkey", "foreignkey[]"]:
                 is_locked = True
             self.add_widget(ctype, cdata, is_locked)
             
     def show_error(self, msg):
         self.lbl_error.config(text=f"❌ {msg}")
-        self.after(3000, lambda: self.lbl_error.config(text="")) # 3초 후 삭제
+        self.after(3000, lambda: self.lbl_error.config(text=""))
             
     def add_new(self):
         new_type = self.cb_type.get()
         current_types = [child.c_type for child in self.c_container.winfo_children() if isinstance(child, ConstraintWidget)]
         
-        # 💡 [논리적 에러 방지 처리]
         if new_type in current_types:
             self.show_error("동일한 제약조건이 이미 존재합니다.")
             return
-            
         if new_type == "PK" and "REF" in current_types:
             self.show_error("PK와 REF는 공존할 수 없습니다.")
             return
-            
         if new_type == "UNIQUE" and "DEFAULT" in current_types:
             self.show_error("UNIQUE와 DEFAULT는 공존할 수 없습니다.")
             return
-            
         if new_type == "DEFAULT" and "UNIQUE" in current_types:
             self.show_error("UNIQUE와 DEFAULT는 공존할 수 없습니다.")
             return
@@ -238,7 +226,6 @@ class ColumnConstraintBuilder(tk.Frame):
             if isinstance(child, ConstraintWidget):
                 current_types.append(child.c_type)
         
-        # 💡 [저장 전 최종 무결성 검증 - 엑셀에 임의로 잘못 적어둔 경우 차단]
         if "PK" in current_types and "REF" in current_types:
             self.show_error("저장 불가: PK와 REF 공존")
             return None

@@ -69,12 +69,10 @@ class AppGUI(tk.Tk):
 
         self.bind('<Configure>', self._on_root_configure)
 
-        # Header
         header_frame = tk.Frame(self.main_container, bg="#2D2D2D", pady=10)
         header_frame.pack(fill="x")
         tk.Label(header_frame, text="⚙️ 기획 데이터 파이프라인 관리 도구", font=("Segoe UI", 16, "bold"), fg="#FFFFFF", bg="#2D2D2D").pack()
         
-        # Navigation
         nav_frame = tk.Frame(self.main_container, bg="#1E1E1E", pady=15, padx=20)
         nav_frame.pack(fill="x")
         tk.Label(nav_frame, text="작업 경로:", font=("맑은 고딕", 10, "bold"), fg="#CCCCCC", bg="#1E1E1E").pack(side="left")
@@ -91,13 +89,11 @@ class AppGUI(tk.Tk):
         btn_browse = tk.Button(nav_frame, text="🔍 탐색", font=("맑은 고딕", 9), bg="#444444", fg="white", bd=0, command=self.browse_dir)
         btn_browse.pack(side="left", padx=2)
 
-        # 💡 [NEW] Global Option Frame
         opt_frame = tk.Frame(self.main_container, bg="#1E1E1E", padx=20)
         opt_frame.pack(fill="x", pady=(0, 10))
         tk.Checkbutton(opt_frame, text="현재 경로 및 하위 폴더 모두 포함 (DFS 탐색)", variable=self.include_subdirs, font=("맑은 고딕", 10, "bold"),
                        bg="#1E1E1E", fg="#FFD700", selectcolor="#2D2D2D", activebackground="#1E1E1E", activeforeground="white", command=self.on_option_changed).pack(side="left")
 
-        # Content 5:5 split
         content_frame = tk.Frame(self.main_container, bg="#1E1E1E")
         content_frame.pack(fill="both", expand=True, padx=20, pady=5)
         
@@ -134,9 +130,9 @@ class AppGUI(tk.Tk):
 
     def set_buttons_state(self, state):
         flag = tk.NORMAL if state else tk.DISABLED
-        if hasattr(self, 'btn1'): self.btn1.config(state=flag)
-        if hasattr(self, 'btn2'): self.btn2.config(state=flag)
-        if hasattr(self, 'btn4'): self.btn4.config(state=flag)
+        if hasattr(self.left_panel.app, 'btn1'): self.left_panel.app.btn1.config(state=flag)
+        if hasattr(self.left_panel.app, 'btn2'): self.left_panel.app.btn2.config(state=flag)
+        if hasattr(self.left_panel.app, 'btn4'): self.left_panel.app.btn4.config(state=flag)
         self.path_entry.config(state=flag)
         
     def apply_manual_path(self):
@@ -229,11 +225,11 @@ class AppGUI(tk.Tk):
         if not self.watcher.is_watching:
             is_recursive = self.include_subdirs.get()
             self.watcher.start(self.target_dir, is_recursive)
-            if hasattr(self, 'btn3'): self.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
+            if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
             self.right_panel.log(f"\n🕵️‍♂️ [백그라운드 감시 시작] (하위 폴더 포함: {is_recursive})")
         else:
             self.watcher.stop()
-            if hasattr(self, 'btn3'): self.btn3.config(text="백그라운드 자동 변환 감시 모드 시작", bg="#6C757D")
+            if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 자동 변환 감시 모드 시작", bg="#6C757D")
             self.right_panel.log("\n🛑 [백그라운드 감시 중지] 정상 종료됨.")
 
     def run_candidate_key_finder(self):
