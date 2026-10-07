@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 from utils import get_initial_dir, find_workspace_root, create_workspace_root
 from core.converter import convert_xlsx_file, convert_ansi_csv_to_utf8
 from core.candidate_finder import find_candidate_keys
+from core.validator import run_global_validation # 💡 [NEW] validator import
 from core.watcher import PipelineWatcher
 
 from gui.left_panel import LeftPanel
@@ -48,7 +49,6 @@ class AppGUI(tk.Tk):
             self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
             self.right_panel.log(f"✅ 워크스페이스 로드 성공: {self.workspace_file}")
             
-            # 작업 경로가 워크스페이스 밖이라면 안으로 맞춤
             if not os.path.abspath(self.target_dir).startswith(os.path.abspath(self.workspace_root)):
                 self.target_dir = self.workspace_root
                 self.path_entry_var.set(self.target_dir)
@@ -57,7 +57,6 @@ class AppGUI(tk.Tk):
             self.lbl_workspace.config(text="⚠️ 워크스페이스 미설정 (기능 제한)")
 
     def change_workspace_manual(self):
-        # 💡 수동으로 워크스페이스 변경/생성 버튼 클릭 시
         selected_dir = filedialog.askdirectory(title="워크스페이스 폴더 선택 (기존 로드 또는 새로 생성)", initialdir=self.target_dir)
         if not selected_dir:
             return
@@ -112,7 +111,6 @@ class AppGUI(tk.Tk):
         header_frame.pack(fill="x")
         tk.Label(header_frame, text="⚙️ CSV DesignDB Toolkit", font=("Segoe UI", 16, "bold"), fg="#FFFFFF", bg="#2D2D2D").pack()
         
-        # 💡 워크스페이스 정보 라벨과 변경 버튼을 한 줄에 배치
         workspace_frame = tk.Frame(self.main_container, bg="#1E1E1E", pady=10)
         workspace_frame.pack(fill="x")
         
@@ -178,6 +176,7 @@ class AppGUI(tk.Tk):
         if hasattr(self.left_panel.app, 'btn1'): self.left_panel.app.btn1.config(state=flag)
         if hasattr(self.left_panel.app, 'btn2'): self.left_panel.app.btn2.config(state=flag)
         if hasattr(self.left_panel.app, 'btn4'): self.left_panel.app.btn4.config(state=flag)
+        if hasattr(self.left_panel.app, 'btn_validate'): self.left_panel.app.btn_validate.config(state=flag) # 💡 [NEW] 검증 버튼
 
     def set_progress(self, value):
         self.after(0, lambda: self.progress_var.set(value))
@@ -201,7 +200,6 @@ class AppGUI(tk.Tk):
             self.change_dir(os.path.normpath(selected_dir))
 
     def change_dir_force(self, new_dir):
-        # 💡 무조건 디렉터리를 변경하고 UI를 갱신하는 헬퍼 함수
         self.target_dir = new_dir
         self.path_entry_var.set(self.target_dir)
         self.right_panel.log(f"\n📂 작업 경로(포커스) 변경됨: {self.target_dir}")
@@ -217,21 +215,14 @@ class AppGUI(tk.Tk):
             return
 
         abs_new = os.path.abspath(new_dir)
-        
-        # 💡 1. 워크스페이스가 설정되어 있을 때의 경계 이탈 검사 로직
         if self.workspace_root:
             abs_ws = os.path.abspath(self.workspace_root)
-            
-            # 이동하려는 곳이 현재 워크스페이스 내부라면 바로 허용
             if abs_new.startswith(abs_ws):
                 self.change_dir_force(new_dir)
                 return
             
-            # 이동하려는 곳이 워크스페이스 외부인 경우
             w_root, w_file = find_workspace_root(new_dir)
-            
             if w_root and os.path.abspath(w_root) != abs_ws:
-                # 외부에 다른 워크스페이스가 존재하는 경우 묻기
                 ans = messagebox.askyesno("워크스페이스 변경", f"상위 폴더에 다른 워크스페이스가 감지되었습니다.\n\n새 워크스페이스로 전환하시겠습니까?\n{w_root}")
                 if ans:
                     self.workspace_root = w_root
@@ -241,16 +232,14 @@ class AppGUI(tk.Tk):
                     self.change_dir_force(new_dir)
                 else:
                     self.right_panel.log("⚠️ 이동 취소: 기존 워크스페이스 유지를 선택했습니다.")
-                    self.path_entry_var.set(self.target_dir) # 엔트리 롤백
+                    self.path_entry_var.set(self.target_dir) 
                 return
             else:
-                # 외부에 워크스페이스가 없는 경우 부드럽게 차단
                 messagebox.showwarning("이동 제한", "선택한 경로는 현재 워크스페이스 외부에 있습니다.\n\n워크스페이스 전체를 변경하려면 우측 상단의 [워크스페이스 변경/생성] 버튼을 이용해주세요.")
                 self.right_panel.log(f"⚠️ 경계 이탈 차단: {new_dir}")
-                self.path_entry_var.set(self.target_dir) # 엔트리 롤백
+                self.path_entry_var.set(self.target_dir) 
                 return
                 
-        # 💡 2. 애초에 워크스페이스가 없는(초기화 취소 등) 경우는 멈춤 없이 자유롭게 이동 허용
         self.change_dir_force(new_dir)
 
     def on_option_changed(self):
@@ -323,6 +312,20 @@ class AppGUI(tk.Tk):
             self.set_progress(0)
             self.right_panel.log("\n🚀 [작업 시작] 메타데이터 후보키(JSON) 추출")
             find_candidate_keys(self.target_dir, self.max_combo_var.get(), self.include_subdirs.get(), self.right_panel.log, self.set_progress)
+            self.set_buttons_state(True)
+        threading.Thread(target=task, daemon=True).start()
+
+    # 💡 [NEW] 글로벌 무결성 검증 태스크
+    def run_global_validation(self):
+        if not self.workspace_root:
+            messagebox.showwarning("경고", "워크스페이스가 설정되지 않았습니다.")
+            return
+        def task():
+            self.set_buttons_state(False)
+            self.set_progress(0)
+            self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전체 데이터베이스 글로벌 검증")
+            # 💡 작업 경로가 아닌 "워크스페이스 전체"를 스캔하여 5대 무결성을 검증합니다.
+            run_global_validation(self.workspace_root, self.right_panel.log, self.set_progress)
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()
 

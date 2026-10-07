@@ -31,6 +31,11 @@ class LeftPanel(tk.Frame):
         self.tab4 = MetaEditorTab(self.notebook, self.app)
         self.notebook.add(self.tab4, text="4. 메타 관리(PK/FK)")
 
+        # 💡 [NEW] 신규 탭 추가
+        self.tab5 = tk.Frame(self.notebook, bg="#1E1E1E")
+        self.notebook.add(self.tab5, text="5. 전체 무결성 검증")
+        self._build_tab5()
+
     def _parse_raw_header(self, header_str):
         name = header_str
         c_type = ""
@@ -100,7 +105,6 @@ class LeftPanel(tk.Frame):
             self.app.right_panel.log("⚠️ 워크스페이스가 설정되지 않았습니다.")
             return
             
-        # 💡 [FIX] 현재 '작업 경로(target_dir)'를 기준으로 리스트업합니다.
         files = get_excel_files(self.app.target_dir, self.app.include_subdirs.get())
         if files:
             self.t1_combo_files['values'] = files
@@ -114,7 +118,6 @@ class LeftPanel(tk.Frame):
     def _t1_load_headers(self):
         rel_path = self.t1_combo_files.get()
         if not rel_path or not self.app.workspace_root: return
-        # 💡 [FIX] 선택된 텍스트가 'target_dir' 기준 상대경로이므로 target_dir과 결합합니다.
         filepath = os.path.join(self.app.target_dir, rel_path)
         
         success, data = read_headers(filepath)
@@ -159,7 +162,7 @@ class LeftPanel(tk.Frame):
     def _t1_1_save_headers(self):
         rel_path = self.t1_combo_files.get()
         if not rel_path or not self.app.workspace_root: return
-        filepath = os.path.join(self.app.target_dir, rel_path) # 💡 [FIX]
+        filepath = os.path.join(self.app.target_dir, rel_path)
         
         new_headers = []
         for i, (ent_name, combo_type) in enumerate(self.t1_1_row_widgets):
@@ -197,7 +200,7 @@ class LeftPanel(tk.Frame):
     def _t1_2_save_headers(self):
         rel_path = self.t1_combo_files.get()
         if not rel_path or not self.app.workspace_root: return
-        filepath = os.path.join(self.app.target_dir, rel_path) # 💡 [FIX]
+        filepath = os.path.join(self.app.target_dir, rel_path)
         
         new_headers = []
         for i, builder in enumerate(self.t1_2_row_widgets):
@@ -253,3 +256,27 @@ class LeftPanel(tk.Frame):
 
         self.app.progress_bar = ttk.Progressbar(inner, variable=self.app.progress_var, maximum=100)
         self.app.progress_bar.pack(fill="x", padx=10, pady=(0, 10))
+
+    # 💡 [NEW] 무결성 검증 탭 UI
+    def _build_tab5(self):
+        scroll_frame = ScrollableFrame(self.tab5)
+        scroll_frame.pack(fill="both", expand=True)
+        inner = scroll_frame.inner_frame
+
+        guide_frame = tk.Frame(inner, bg="#252526", bd=1, relief="solid")
+        guide_frame.pack(fill="x", padx=10, pady=(15, 10))
+        
+        guide_text = (
+            "🛡️ [전체 데이터베이스 무결성 검증]\n\n"
+            "워크스페이스(Root) 전체를 대상으로 RDBMS 수준의 5대 무결성을 교차 검증합니다.\n\n"
+            "1. 개체 무결성 : 기본키(PK)의 중복 및 빈 칸(Null) 존재 여부\n"
+            "2. 참조 무결성 : 외래키(FK)가 가리키는 대상이 실제로 존재하는지 교차 확인\n"
+            "3. 도메인 무결성: 데이터 타입의 형식 일치 여부\n"
+            "4. 고유 무결성 : UNIQUE 제약조건 위반 여부\n"
+            "5. Null 무결성 : NOT NULL 제약조건 위반 여부\n\n"
+            "※ 검증 전, 모든 파일의 [메타 추출] 및 [PK 설정]이 완료되어야 합니다."
+        )
+        tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
+
+        self.app.btn_validate = tk.Button(inner, text="데이터베이스 전체 무결성 글로벌 검증 시작", font=("맑은 고딕", 12, "bold"), bg="#DC3545", fg="white", bd=0, height=3, command=self.app.run_global_validation)
+        self.app.btn_validate.pack(fill="x", padx=10, pady=10)
