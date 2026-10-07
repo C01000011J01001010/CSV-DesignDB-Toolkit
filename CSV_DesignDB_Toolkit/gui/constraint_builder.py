@@ -5,8 +5,6 @@ import re
 def parse_constraint_string(c_str):
     c_str = c_str.strip()
     c_upper = c_str.upper()
-    if c_upper in ['PK', 'PRIMARYKEY']: return 'PK', None
-    if c_upper in ['REF', 'REFERENCE']: return 'REF', None
     if c_upper == 'UNIQUE': return 'UNIQUE', None
     if c_upper == 'NOT NULL': return 'NOT NULL', None
     
@@ -42,24 +40,19 @@ def parse_constraint_string(c_str):
                 else:
                     raise Exception("Parse fail")
             return 'CHECK', {'conditions': conditions}
-        except:
-            pass
+        except: pass
     
     return 'RAW', {'value': c_str}
 
 class ConstraintWidget(tk.Frame):
-    def __init__(self, parent, c_type, init_data=None, is_locked=False):
+    def __init__(self, parent, c_type, init_data=None):
         super().__init__(parent, bg="#333333", bd=1, relief="solid")
         self.c_type = c_type
         
         top = tk.Frame(self, bg="#333333")
         top.pack(fill="x", padx=5, pady=2)
         tk.Label(top, text=c_type, bg="#333333", fg="#FFD700", font=("Consolas", 10, "bold")).pack(side="left")
-        
-        if not is_locked:
-            tk.Button(top, text="🗑️", bg="#DC3545", fg="white", bd=0, padx=5, pady=0, font=("맑은 고딕", 8), command=self.destroy).pack(side="right")
-        else:
-            tk.Label(top, text="🔒 (필수/기본값)", bg="#333333", fg="#888888", font=("맑은 고딕", 8)).pack(side="right")
+        tk.Button(top, text="🗑️", bg="#DC3545", fg="white", bd=0, padx=5, pady=0, font=("맑은 고딕", 8), command=self.destroy).pack(side="right")
         
         self.content = tk.Frame(self, bg="#333333")
         self.content.pack(fill="x", padx=10, pady=(0,5))
@@ -118,7 +111,6 @@ class ConstraintWidget(tk.Frame):
         if not is_first: logic_cb.pack(side="left", padx=(0, 5))
         
         tk.Label(row, text="VALUE", bg="#333333", fg="#00FF66", font=("Consolas", 10, "bold")).pack(side="left")
-        
         comp_cb = ttk.Combobox(row, values=["==", "!=", ">", ">=", "<", "<="], state="readonly", width=4)
         comp_cb.set(data.get('comp', '==') if data else "==")
         comp_cb.pack(side="left", padx=5)
@@ -135,10 +127,8 @@ class ConstraintWidget(tk.Frame):
         row.destroy()
         
     def get_value(self):
-        if self.c_type in ['PK', 'UNIQUE', 'REF', 'NOT NULL']:
-            return self.c_type
-        elif self.c_type == 'DEFAULT':
-            return f"DEFAULT({self.entries[0].get()})"
+        if self.c_type in ['UNIQUE', 'NOT NULL']: return self.c_type
+        elif self.c_type == 'DEFAULT': return f"DEFAULT({self.entries[0].get()})"
         elif self.c_type in ['CHECK IN', 'CHECK NOT IN']:
             vals = [e.get() for e in self.entries if e.get().strip()]
             if not vals: return None
@@ -148,14 +138,13 @@ class ConstraintWidget(tk.Frame):
             for i, (l, c, v) in enumerate(self.conditions):
                 val = v.get().strip()
                 if not val: continue
-                comp = c.get()
-                if i == 0:
-                    conds.append(f"VALUE {comp} {val}")
-                else:
-                    conds.append(f" {l.get()} VALUE {comp} {val}")
+                if i == 0: conds.append(f"VALUE {c.get()} {val}")
+                else: conds.append(f" {l.get()} VALUE {c.get()} {val}")
             if not conds: return None
             return f"CHECK({''.join(conds)})"
         elif self.c_type == 'RAW':
+            val = self.entries[0].get().upper()
+            if 'PK' in val or 'REF' in val or 'PRIMARYKEY' in val or 'REFERENCE' in val: return None 
             return self.entries[0].get()
 
 class ColumnConstraintBuilder(tk.Frame):
@@ -166,19 +155,17 @@ class ColumnConstraintBuilder(tk.Frame):
         
         header = tk.Frame(self, bg="#252526")
         header.pack(fill="x", padx=10, pady=5)
-        
         tk.Label(header, text=f"■ {col_name}", bg="#252526", fg="#00FF66", font=("맑은 고딕", 11, "bold")).pack(side="left")
         if col_type:
             tk.Label(header, text=f"({col_type})", bg="#252526", fg="#CCCCCC", font=("Consolas", 10)).pack(side="left", padx=5)
         
         add_frame = tk.Frame(header, bg="#252526")
         add_frame.pack(side="right")
-        
         self.lbl_error = tk.Label(add_frame, text="", bg="#252526", fg="#FF5555", font=("맑은 고딕", 9, "bold"))
         self.lbl_error.pack(side="left", padx=10)
         
-        self.cb_type = ttk.Combobox(add_frame, values=["PK", "UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "CHECK IN", "CHECK NOT IN"], state="readonly", width=12)
-        self.cb_type.set("PK")
+        self.cb_type = ttk.Combobox(add_frame, values=["UNIQUE", "NOT NULL", "DEFAULT", "CHECK", "CHECK IN", "CHECK NOT IN"], state="readonly", width=12)
+        self.cb_type.set("UNIQUE")
         self.cb_type.pack(side="left", padx=5)
         tk.Button(add_frame, text="+ 제약조건 추가", bg="#007ACC", fg="white", bd=0, font=("맑은 고딕", 9), command=self.add_new).pack(side="left")
         
@@ -187,10 +174,8 @@ class ColumnConstraintBuilder(tk.Frame):
         
         for c_str in constraints_list:
             ctype, cdata = parse_constraint_string(c_str)
-            is_locked = False
-            if ctype == 'REF' and col_type.lower() in ["assetid", "assetid[]", "foreignkey", "foreignkey[]"]:
-                is_locked = True
-            self.add_widget(ctype, cdata, is_locked)
+            if ctype in ['PK', 'REF']: continue
+            self.add_widget(ctype, cdata)
             
     def show_error(self, msg):
         self.lbl_error.config(text=f"❌ {msg}")
@@ -201,39 +186,29 @@ class ColumnConstraintBuilder(tk.Frame):
         current_types = [child.c_type for child in self.c_container.winfo_children() if isinstance(child, ConstraintWidget)]
         
         if new_type in current_types:
-            self.show_error("동일한 제약조건이 이미 존재합니다.")
-            return
-        if new_type == "PK" and "REF" in current_types:
-            self.show_error("PK와 REF는 공존할 수 없습니다.")
+            self.show_error("동일 제약조건 존재")
             return
         if new_type == "UNIQUE" and "DEFAULT" in current_types:
-            self.show_error("UNIQUE와 DEFAULT는 공존할 수 없습니다.")
+            self.show_error("UNIQUE와 DEFAULT 공존불가")
             return
         if new_type == "DEFAULT" and "UNIQUE" in current_types:
-            self.show_error("UNIQUE와 DEFAULT는 공존할 수 없습니다.")
+            self.show_error("UNIQUE와 DEFAULT 공존불가")
             return
             
         self.lbl_error.config(text="")
-        self.add_widget(new_type, None, is_locked=False)
+        self.add_widget(new_type, None)
         
-    def add_widget(self, ctype, cdata, is_locked=False):
-        cw = ConstraintWidget(self.c_container, ctype, cdata, is_locked)
+    def add_widget(self, ctype, cdata):
+        cw = ConstraintWidget(self.c_container, ctype, cdata)
         cw.pack(side="top", fill="x", pady=2)
         
     def get_constraints(self):
-        current_types = []
-        for child in self.c_container.winfo_children():
-            if isinstance(child, ConstraintWidget):
-                current_types.append(child.c_type)
-        
-        if "PK" in current_types and "REF" in current_types:
-            self.show_error("저장 불가: PK와 REF 공존")
-            return None
+        current_types = [c.c_type for c in self.c_container.winfo_children() if isinstance(c, ConstraintWidget)]
         if "UNIQUE" in current_types and "DEFAULT" in current_types:
-            self.show_error("저장 불가: UNIQUE와 DEFAULT 공존")
+            self.show_error("저장 불가: UNIQUE & DEFAULT")
             return None
         if len(current_types) != len(set(current_types)):
-            self.show_error("저장 불가: 중복된 제약조건 존재")
+            self.show_error("저장 불가: 중복 제약조건")
             return None
 
         res = []

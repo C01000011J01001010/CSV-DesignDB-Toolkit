@@ -31,32 +31,23 @@ def find_candidate_keys(target_dir, max_len, include_subdirs, on_log, on_progres
         total_rows = len(df)
         valid_columns = []
         ex_constraint_info, ex_null, ex_special = [], [], []
-        skip_keywords = {"ref", "fk", "foreignkey", "arr", "array"}
         new_columns = {}
         
         for old_col in df.columns:
             col_str = str(old_col).strip()
             clean_col = col_str
             c_type = ""
-            constraints = []
             
             if col_str.startswith('{') and col_str.endswith('}'):
-                inner_text = col_str[1:-1]
-                parts = [p.strip() for p in inner_text.split('/')]
+                parts = [p.strip() for p in col_str[1:-1].split('/')]
                 if parts:
                     clean_col = parts[0]
                     if len(parts) > 1: c_type = parts[1].lower()
-                    constraints = [p.lower() for p in parts[2:]]
 
             new_columns[old_col] = clean_col
             
-            if "[]" in c_type:
-                ex_constraint_info.append(f"'{clean_col}' (배열 타입 제외)")
-                continue
-
-            matched_kw = next((kw for kw in constraints if kw in skip_keywords), None)
-            if matched_kw:
-                ex_constraint_info.append(f"'{clean_col}' (키워드: {matched_kw.upper()})")
+            if "[]" in c_type or c_type == 'float':
+                ex_constraint_info.append(f"'{clean_col}' ({c_type} 키 배제)")
                 continue
 
             if df[old_col].isna().any() or (df[old_col].dropna().astype(str).str.strip() == '').any():
@@ -71,7 +62,7 @@ def find_candidate_keys(target_dir, max_len, include_subdirs, on_log, on_progres
 
         df = df.rename(columns=new_columns)
 
-        if ex_constraint_info: on_log(f"  └ 🚫 제외됨 (제약 스킵) : {', '.join(ex_constraint_info)}")
+        if ex_constraint_info: on_log(f"  └ 🚫 제외됨 (타입 제한) : {', '.join(ex_constraint_info)}")
         if ex_null: on_log(f"  └ 🚫 제외됨 (빈 값/NaN) : {ex_null}")
         if ex_special: on_log(f"  └ 🚫 제외됨 ('|' 또는 '_'): {ex_special}")
         
@@ -84,7 +75,6 @@ def find_candidate_keys(target_dir, max_len, include_subdirs, on_log, on_progres
         total_combos = sum(math.comb(n_cols, r) for r in range(1, actual_max + 1))
         candidate_keys = []
         processed = 0
-        json_candidate_keys = []
 
         for r in range(1, actual_max + 1):
             for combo in combinations(valid_columns, r):
@@ -98,15 +88,8 @@ def find_candidate_keys(target_dir, max_len, include_subdirs, on_log, on_progres
                         break
                 
                 if is_minimal and len(df[list(combo)].drop_duplicates()) == total_rows:
-                    candidate_keys.append(combo)
+                    candidate_keys.append(list(combo))
                     on_log(f"  └ ✅ [후보키] {combo}")
-                    
-                    combo_list = list(combo)
-                    unique_vals = df[combo_list].drop_duplicates().astype(str).values.tolist()
-                    json_candidate_keys.append({
-                        "columns": combo_list,
-                        "values": unique_vals
-                    })
                 
                 processed += 1
                 progress = (processed / total_combos) * 100
@@ -114,14 +97,28 @@ def find_candidate_keys(target_dir, max_len, include_subdirs, on_log, on_progres
 
         on_log(f"▷ 총 {len(candidate_keys)}개의 후보키 발견 완료.")
 
-        json_data = {"candidateKeys": json_candidate_keys}
         json_path = os.path.splitext(csv_file)[0] + ".json"
+        meta_data = {
+            "csvFileName": os.path.basename(csv_file),
+            "primaryKey": [],
+            "foreignKeys": {},
+            "candidateKeys": candidate_keys
+        }
+        
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    existing = json.load(jf)
+                    if 'primaryKey' in existing: meta_data['primaryKey'] = existing['primaryKey']
+                    if 'foreignKeys' in existing: meta_data['foreignKeys'] = existing['foreignKeys']
+            except: pass
+
         try:
             with open(json_path, 'w', encoding='utf-8') as jf:
-                json.dump(json_data, jf, ensure_ascii=False, indent=2)
-            on_log(f"  └ 💾 JSON 저장 완료: {os.path.basename(json_path)}")
+                json.dump(meta_data, jf, ensure_ascii=False, indent=2)
+            on_log(f"  └ 💾 JSON 메타데이터 갱신 완료: {os.path.basename(json_path)}")
         except Exception as e:
             on_log(f"  └ ❌ JSON 저장 실패: {e}")
 
-    on_log("\n✨ 모든 CSV 파일의 후보키 탐색 및 JSON 생성이 완료되었습니다!")
+    on_log("\n✨ 모든 CSV 파일의 후보키 분석 및 JSON 갱신이 완료되었습니다!")
     on_progress(100)

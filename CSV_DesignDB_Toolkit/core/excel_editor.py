@@ -2,6 +2,7 @@ import os
 import openpyxl
 
 def get_excel_files(target_dir, recursive):
+    # 💡 [FIX] workspace_root 파라미터 제거. 오직 target_dir 기준으로만 상대경로를 뽑습니다.
     files = []
     for root, dirs, fnames in os.walk(target_dir):
         dirs[:] = [d for d in dirs if not d.startswith('Disabled')]
@@ -9,7 +10,10 @@ def get_excel_files(target_dir, recursive):
         for f in fnames:
             if f.endswith('.xlsx') and not f.startswith('~$'):
                 full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, target_dir)
+                try:
+                    rel_path = os.path.relpath(full_path, target_dir)
+                except ValueError:
+                    rel_path = full_path
                 files.append(rel_path)
     return files
 

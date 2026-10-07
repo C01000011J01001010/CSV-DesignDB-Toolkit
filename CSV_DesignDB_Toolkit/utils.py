@@ -34,3 +34,27 @@ def is_disabled_path(filepath):
         if part.startswith("Disabled"):
             return True
     return False
+
+def find_workspace_root(start_dir):
+    current = os.path.abspath(start_dir)
+    while True:
+        try:
+            for f in os.listdir(current):
+                if f.startswith("__csvMetaRoot") and f.endswith(".root"):
+                    return current, f
+        except Exception:
+            pass
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None, None
+        current = parent
+
+def create_workspace_root(target_dir, project_name):
+    filename = f"__csvMetaRoot_{project_name}__.root"
+    filepath = os.path.join(target_dir, filename)
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write("CSV Metadata Workspace Root")
+        return target_dir, filename
+    except Exception as e:
+        return None, None

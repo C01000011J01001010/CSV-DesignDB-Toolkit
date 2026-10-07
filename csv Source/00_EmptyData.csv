@@ -1,5 +1,5 @@
-﻿{id},{name},{des}
-,1.0,
-,,1.0
-1.0,,
-,2.0,
+﻿{id/int},{name/string},{des/string},{test/ForeignKey/REF},{testArr/AssetId[]/REF}
+,1.0,,,
+,,1.0,,
+1.0,,,,
+,2.0,,,
