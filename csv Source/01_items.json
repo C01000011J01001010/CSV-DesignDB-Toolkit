@@ -4,13 +4,18 @@
     "ItemID"
   ],
   "foreignKeys": {
-    "TestFK": {
+    "test1": {
       "columns": [
-        "WeaponType",
-        "Level",
-        "IsTradable"
+        "ItemID"
       ],
-      "targetTable": "csv Source\\Test Directory\\01_items.csv"
+      "targetTable": "csv Source\\01_items.csv"
+    },
+    "test2": {
+      "columns": [
+        "ItemName",
+        "DisplayText"
+      ],
+      "targetTable": "csv Source\\02_skills_composite_key.csv"
     }
   },
   "candidateKeys": [

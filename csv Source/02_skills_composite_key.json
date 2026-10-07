@@ -1,6 +1,9 @@
 {
   "csvFileName": "02_skills_composite_key.csv",
-  "primaryKey": [],
+  "primaryKey": [
+    "CharacterClass",
+    "SkillSlot"
+  ],
   "foreignKeys": {},
   "candidateKeys": [
     [

@@ -16,7 +16,9 @@ class MetaEditorTab(tk.Frame):
         self.current_json_path = None
         self.meta_data = None
         self.workspace_csv_files = []
-        self.local_col_vars = {} 
+        
+        self.local_col_types = {}
+        self.dynamic_fk_combos = []
 
         # --- Top: File Selector ---
         top_frame = tk.Frame(self.inner, bg="#1E1E1E")
@@ -62,12 +64,22 @@ class MetaEditorTab(tk.Frame):
         tk.Label(fk_add_bar, text="타겟 테이블 (Workspace 內):", bg="#1E1E1E", fg="#CCCCCC").grid(row=0, column=2, padx=5, pady=5, sticky="e")
         self.combo_target_table = ttk.Combobox(fk_add_bar, state="readonly", width=30)
         self.combo_target_table.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        self.combo_target_table.bind("<<ComboboxSelected>>", self.on_target_table_select)
         
         tk.Button(fk_add_bar, text="+ FK 객체 추가", bg="#28A745", fg="white", font=("맑은 고딕", 9, "bold"), bd=0, command=self.add_fk).grid(row=0, column=4, sticky="w", padx=15)
         
-        tk.Label(fk_add_bar, text="로컬 컬럼 선택:", bg="#1E1E1E", fg="#CCCCCC").grid(row=1, column=0, padx=5, pady=5, sticky="ne")
+        tk.Label(fk_add_bar, text="로컬 매핑 컬럼:", bg="#1E1E1E", fg="#CCCCCC").grid(row=1, column=0, padx=5, pady=5, sticky="ne")
         self.local_cols_frame = tk.Frame(fk_add_bar, bg="#1E1E1E")
         self.local_cols_frame.grid(row=1, column=1, columnspan=4, padx=5, pady=5, sticky="w")
+
+    def _parse_header(self, raw_str):
+        raw_str = str(raw_str).strip()
+        if raw_str.startswith('{') and raw_str.endswith('}'):
+            parts = [p.strip() for p in raw_str[1:-1].split('/')]
+            name = parts[0]
+            ctype = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "string"
+            return name, ctype
+        return raw_str, "string"
 
     def refresh_files(self):
         if not self.app.workspace_root: return
@@ -86,7 +98,6 @@ class MetaEditorTab(tk.Frame):
             if not is_recursive: dirs.clear()
             for f in files:
                 if f.endswith('.json'):
-                    # 💡 [FIX] JSON의 드롭박스 표시도 target_dir 기준 상대경로로 맞춥니다.
                     rel = os.path.relpath(os.path.join(root, f), self.app.target_dir)
                     jsons.append(rel)
                 
@@ -100,7 +111,6 @@ class MetaEditorTab(tk.Frame):
     def load_meta(self):
         rel = self.combo_files.get()
         if not rel: return
-        # 💡 [FIX] 선택된 JSON 경로도 target_dir과 결합합니다.
         self.current_json_path = os.path.join(self.app.target_dir, rel)
         
         try:
@@ -125,39 +135,84 @@ class MetaEditorTab(tk.Frame):
         for fk_name, fk_data in fks.items():
             self._render_fk_row(fk_name, fk_data['targetTable'], fk_data['columns'])
             
+        self.local_col_types.clear()
         csv_path = self.current_json_path.replace('.json', '.csv')
-        clean_cols = []
         if os.path.exists(csv_path):
             try:
                 try: df = pd.read_csv(csv_path, nrows=0, encoding='utf-8')
                 except UnicodeDecodeError: df = pd.read_csv(csv_path, nrows=0, encoding='cp949')
                     
                 for c in df.columns:
-                    c_str = str(c).strip()
-                    if c_str.startswith('{') and c_str.endswith('}'):
-                        clean_cols.append(c_str[1:-1].split('/')[0].strip())
-                    else:
-                        clean_cols.append(c_str)
+                    name, ctype = self._parse_header(c)
+                    self.local_col_types[name] = ctype
             except Exception as e:
                 self.app.right_panel.log(f"⚠️ CSV 컬럼 로드 실패: {e}")
 
         for w in self.local_cols_frame.winfo_children(): w.destroy()
-        self.local_col_vars.clear()
+        self.dynamic_fk_combos.clear()
+        self.combo_target_table.set('')
 
-        if not clean_cols:
-            tk.Label(self.local_cols_frame, text="(읽을 수 있는 컬럼이 없습니다.)", bg="#1E1E1E", fg="#888888").pack(side="left")
-        else:
-            for i, col in enumerate(clean_cols):
-                var = tk.BooleanVar(value=False)
-                self.local_col_vars[col] = var
-                cb = tk.Checkbutton(self.local_cols_frame, text=col, variable=var, font=("Consolas", 10),
-                                    bg="#1E1E1E", fg="#FFD700", selectcolor="#2D2D2D",
-                                    activebackground="#1E1E1E", activeforeground="white")
-                row_idx = i // 5
-                col_idx = i % 5
-                cb.grid(row=row_idx, column=col_idx, sticky="w", padx=5, pady=2)
+        self.app.right_panel.log(f"▶ {rel} 메타데이터 로드 완료.")
 
-        self.app.right_panel.log(f"▶ {rel} 메타데이터 및 컬럼 정보 로드 완료.")
+    def on_target_table_select(self, event=None):
+        for w in self.local_cols_frame.winfo_children(): w.destroy()
+        self.dynamic_fk_combos.clear()
+        
+        target_rel = self.combo_target_table.get()
+        if not target_rel or not self.app.workspace_root: return
+        
+        target_csv_path = os.path.join(self.app.workspace_root, target_rel)
+        target_json_path = os.path.splitext(target_csv_path)[0] + ".json"
+        
+        if not os.path.exists(target_json_path):
+            messagebox.showwarning("안내", "대상 테이블의 메타데이터(JSON)가 없습니다.\n먼저 대상 테이블의 메타데이터 추출 및 기본키(PK)를 설정해주세요.")
+            self.combo_target_table.set('')
+            return
+            
+        try:
+            with open(target_json_path, 'r', encoding='utf-8') as f:
+                t_meta = json.load(f)
+        except Exception as e:
+            messagebox.showerror("오류", f"JSON 파싱 실패: {e}")
+            return
+            
+        t_pk = t_meta.get('primaryKey', [])
+        if not t_pk:
+            messagebox.showwarning("안내", "대상 테이블에 설정된 기본키(PK)가 없습니다.\n해당 테이블의 메타데이터에서 기본키를 먼저 지정해야 외래키 참조가 가능합니다.")
+            self.combo_target_table.set('')
+            return
+            
+        t_types = {}
+        if os.path.exists(target_csv_path):
+            try:
+                try: df = pd.read_csv(target_csv_path, nrows=0, encoding='utf-8')
+                except UnicodeDecodeError: df = pd.read_csv(target_csv_path, nrows=0, encoding='cp949')
+                for c in df.columns:
+                    name, ctype = self._parse_header(c)
+                    t_types[name] = ctype
+            except Exception:
+                pass
+        
+        for pk_col in t_pk:
+            t_type = t_types.get(pk_col, "string")
+            
+            row_f = tk.Frame(self.local_cols_frame, bg="#1E1E1E")
+            row_f.pack(fill="x", pady=4)
+            
+            lbl = tk.Label(row_f, text=f"참조 대상: '{pk_col}' ({t_type})   ➔  내 컬럼:", bg="#1E1E1E", fg="#FFD700", font=("Consolas", 10))
+            lbl.pack(side="left")
+            
+            matched_cols = [c_name for c_name, c_type in self.local_col_types.items() if c_type == t_type]
+            
+            cb = ttk.Combobox(row_f, values=matched_cols, state="readonly", width=25)
+            cb.pack(side="left", padx=5)
+            
+            if matched_cols: 
+                cb.current(0)
+            else:
+                cb.set("일치하는 타입 없음")
+                
+            self.dynamic_fk_combos.append(cb)
 
     def _render_fk_row(self, name, target, cols):
         row = tk.Frame(self.fk_list_container, bg="#333333", pady=5, padx=5)
@@ -182,10 +237,19 @@ class MetaEditorTab(tk.Frame):
         if not self.meta_data or not self.current_json_path: return
         name = self.ent_fk_name.get().strip()
         target = self.combo_target_table.get().strip()
-        cols = [col for col, var in self.local_col_vars.items() if var.get()]
         
-        if not name or not target or not cols:
-            messagebox.showwarning("오류", "객체명과 타겟 테이블을 지정하고, 로컬 컬럼을 1개 이상 체크해주세요.")
+        if not name or not target:
+            messagebox.showwarning("오류", "객체명과 타겟 테이블을 지정해주세요.")
+            return
+            
+        if not self.dynamic_fk_combos:
+            messagebox.showwarning("오류", "타겟 테이블을 선택하여 로컬 컬럼 매핑을 진행해주세요.")
+            return
+            
+        cols = [cb.get() for cb in self.dynamic_fk_combos]
+        
+        if "일치하는 타입 없음" in cols or not all(cols):
+            messagebox.showwarning("오류", "모든 타겟 대상에 대해 일치하는 로컬 컬럼을 매핑해야 합니다.\n(타입이 일치하는 컬럼이 존재하지 않을 수 있습니다)")
             return
             
         if 'foreignKeys' not in self.meta_data:
@@ -193,7 +257,12 @@ class MetaEditorTab(tk.Frame):
             
         self.meta_data['foreignKeys'][name] = {"columns": cols, "targetTable": target}
         self._write_json()
+        
         self.ent_fk_name.delete(0, tk.END)
+        self.combo_target_table.set('')
+        for w in self.local_cols_frame.winfo_children(): w.destroy()
+        self.dynamic_fk_combos.clear()
+        
         self.load_meta() 
         self.app.right_panel.log(f"✅ 외래키({name}) 메타데이터 추가 완료.")
 
