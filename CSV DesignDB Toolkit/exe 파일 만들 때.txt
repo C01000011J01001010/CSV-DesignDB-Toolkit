@@ -1,0 +1,1 @@
+pyinstaller -w -n "CSV DesignDB Toolkit" main.py
