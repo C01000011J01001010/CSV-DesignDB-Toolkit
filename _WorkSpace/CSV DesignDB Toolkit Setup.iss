@@ -22,8 +22,8 @@ SetupIconFile=compiler:SetupClassicIcon.ico
 UninstallDisplayIcon={app}\CSV DesignDB Toolkit.exe
 
 [Files]
-Source: "C:\GitHub Release\CSV-Toolkit\CSV_DesignDB_Toolkit\dist\CSV DesignDB Toolkit\CSV DesignDB Toolkit.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\GitHub Release\CSV-Toolkit\CSV_DesignDB_Toolkit\dist\CSV DesignDB Toolkit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\GitHub Release\CSV-DesignDB-Toolkit\_WorkSpace\dist\CSV DesignDB Toolkit\CSV DesignDB Toolkit.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\GitHub Release\CSV-DesignDB-Toolkit\_WorkSpace\dist\CSV DesignDB Toolkit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; 바탕화면 및 시작 메뉴 바로가기
