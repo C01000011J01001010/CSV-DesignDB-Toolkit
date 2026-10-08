@@ -1,4 +1,6 @@
-version: 1.1.0 
+name: CSV-DesignDB-Toolkit
 
-description: 이전 CSV 변환 프로그램을 계승하여 CSV 작업 파이프라인 프로그램으로 변경함
+version: 1.1.1
+
+description: 엑셀파일의 csv 변경, 컬럼 타입 및 제약조건 설정, 후보키 추출, 기본키 및 외래키 설정, 무결성 검증
 
