@@ -101,14 +101,13 @@ def run_global_validation(workspace_root, on_log, on_progress):
     on_log("✅ 모든 테이블의 메타데이터 확인 완료. 데이터 로드 시작...\n")
     on_progress(20)
     
-    # 💡 [NEW] 에러를 파일별로 모아두는 딕셔너리 버퍼 생성
     file_errors = {}
     
     for csv_file in csv_files:
         base_name = os.path.basename(csv_file)
         if base_name not in meta_dict: continue
         
-        file_errors[base_name] = [] # 에러 보관함 초기화
+        file_errors[base_name] = [] 
         
         try:
             try: df = pd.read_csv(csv_file, encoding='utf-8')
@@ -132,7 +131,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
     
     on_log("🔍 2단계: 개체, 고유, Null, 도메인, 참조 무결성 통합 검사 가동 중...")
     
-    # [Phase 2] 단일 테이블 검증
     for t_name, t_data in df_dict.items():
         df = t_data['df']
         info = t_data['info']
@@ -153,7 +151,8 @@ def run_global_validation(workspace_root, on_log, on_progress):
             pk_dup_mask = df.duplicated(subset=pk_cols, keep=False)
             if pk_dup_mask.any():
                 invalid_df = df[pk_dup_mask][pk_cols]
-                invalid_series = pd.Series([str(tuple(x)) for x in invalid_df.to_numpy()], index=invalid_df.index)
+                # 💡 [FIX] Tuple string rep in PK dup check
+                invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[개체 무결성] 기본키({pk_cols}) 중복 ➔ {format_errors(invalid_series)}")
                 total_errors += 1
 
@@ -181,7 +180,8 @@ def run_global_validation(workspace_root, on_log, on_progress):
             
             if not non_nulls.empty:
                 if is_array:
-                    exploded = non_nulls.astype(str).str.split(',').explode().str.strip()
+                    # 💡 [FIX 1] Array Split Delimiter (1)
+                    exploded = non_nulls.astype(str).str.split('|').explode().str.strip()
                     exploded = exploded[exploded != ""]
                     valid_mask = check_type(exploded, c_type_base)
                     if not valid_mask.all():
@@ -215,7 +215,8 @@ def run_global_validation(workspace_root, on_log, on_progress):
                     if const_u.startswith("CHECK IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK IN("):-1]
                         allowed = [v.strip() for v in vals_str.split('|')]
-                        items_to_check = non_nulls.astype(str).str.split(',').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
+                        # 💡 [FIX 2] Array Split Delimiter (2)
+                        items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
                         invalid_mask = ~items_to_check.isin(allowed)
                         if invalid_mask.any():
                             invalid_series = items_to_check[invalid_mask]
@@ -225,7 +226,8 @@ def run_global_validation(workspace_root, on_log, on_progress):
                     elif const_u.startswith("CHECK NOT IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK NOT IN("):-1]
                         disallowed = [v.strip() for v in vals_str.split('|')]
-                        items_to_check = non_nulls.astype(str).str.split(',').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
+                        # 💡 [FIX 3] Array Split Delimiter (3)
+                        items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
                         invalid_mask = items_to_check.isin(disallowed)
                         if invalid_mask.any():
                             invalid_series = items_to_check[invalid_mask]
@@ -234,7 +236,8 @@ def run_global_validation(workspace_root, on_log, on_progress):
                                 
                     elif const_u.startswith("CHECK(") and const.endswith(")"):
                         expr = const[len("CHECK("):-1]
-                        items_to_check = non_nulls.astype(str).str.split(',').explode().str.strip() if is_array else non_nulls
+                        # 💡 [FIX 4] Array Split Delimiter (4)
+                        items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls
                         
                         failed_idx = []
                         failed_vals = []
@@ -250,7 +253,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
                             
     on_progress(70)
                     
-    # [Phase 3] 참조 무결성(FK) 검증
     for t_name, t_data in df_dict.items():
         df = t_data['df']
         fks = t_data['meta'].get('foreignKeys', {})
@@ -288,18 +290,18 @@ def run_global_validation(workspace_root, on_log, on_progress):
             
             if invalid_mask.any():
                 invalid_df = local_subset[invalid_mask]
-                invalid_series = pd.Series([str(tuple(x)) for x in invalid_df.to_numpy()], index=invalid_df.index)
+                # 💡 [FIX 5] Tuple string rep in FK check
+                invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 유령 참조 값(없는 타겟) 발견 ➔ {format_errors(invalid_series)}")
                 total_errors += 1
 
-    # 💡 [NEW] 수집된 에러 리스트를 파일별 그룹핑하여 출력
     on_progress(90)
     on_log("\n🔍 3단계: 검증 결과 리포트 생성 중...")
     
     if total_errors > 0:
         for t_name, err_list in file_errors.items():
             if err_list:
-                on_log("\n\n\n" + "━"*60) # 파일간 3줄 공백 추가
+                on_log("\n\n\n" + "━"*60) 
                 on_log(f"📁 대상 파일: {t_name} (총 {len(err_list)}건 위반)")
                 on_log("-" * 60)
                 for err in err_list:
