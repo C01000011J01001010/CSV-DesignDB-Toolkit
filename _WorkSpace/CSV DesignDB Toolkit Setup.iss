@@ -10,7 +10,7 @@ DefaultDirName={autopf}\CSV DesignDB Toolkit
 DisableProgramGroupPage=yes
 
 ; 출력될 설치 파일 이름
-OutputBaseFilename=CSV_DesignDB_Toolkit_Setup
+OutputBaseFilename=CSV DesignDB Toolkit Setup
 Compression=lzma
 SolidCompression=yes
 
