@@ -16,18 +16,16 @@ class LeftPanel(tk.Frame):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
 
-        # 💡 [순서 변경] 기존의 2번 탭을 1번으로
         self.tab2 = tk.Frame(self.notebook, bg="#1E1E1E")
         self.notebook.add(self.tab2, text="1. CSV 변환")
         self._build_tab2()
 
-        # 💡 [순서 변경] 기존의 1번 탭을 2번으로
         self.tab1 = tk.Frame(self.notebook, bg="#1E1E1E")
         self.notebook.add(self.tab1, text="2. 스키마/제약조건")
         self._build_tab1()
         
         self.tab3 = tk.Frame(self.notebook, bg="#1E1E1E")
-        self.notebook.add(self.tab3, text="3. 메타(후보키) 추출")
+        self.notebook.add(self.tab3, text="3. 메타(슈퍼키) 추출")
         self._build_tab3()
 
         self.tab4 = MetaEditorTab(self.notebook, self.app)
@@ -37,16 +35,14 @@ class LeftPanel(tk.Frame):
         self.notebook.add(self.tab5, text="5. 전체 무결성 검증")
         self._build_tab5()
 
-        # 💡 [NEW] 탭 이동 이벤트 바인딩 (잠금 장치)
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
     def _on_tab_changed(self, event):
         current_idx = self.notebook.index("current")
-        # 인덱스 0은 '1. CSV 변환' 탭. 그 외의 탭(1,2,3,4 인덱스)으로 갈 때 검사
         if current_idx > 0:
             if not self.app.watcher.is_watching:
                 messagebox.showwarning("안내", "DB 설계 및 검증 기능을 사용하려면\n먼저 [1. CSV 변환] 탭에서 '백그라운드 자동 변환 모드'를 켜주세요.")
-                self.notebook.select(0) # 다시 1번 탭으로 강제 복귀
+                self.notebook.select(0)
 
     def _parse_raw_header(self, header_str):
         name = header_str
@@ -162,9 +158,15 @@ class LeftPanel(tk.Frame):
         ent_name.insert(0, name)
         ent_name.grid(row=row_idx, column=0, padx=5, pady=2)
         
+        # 💡 [FIX] AssetId -> AssetID 로 변경
         combo_type = ttk.Combobox(self.t1_1_rows_frame, state="readonly", width=20, 
-                                  values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetId", "AssetId[]"])
-        if ctype: combo_type.set(ctype)
+                                  values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetID", "AssetID[]"])
+        if ctype: 
+            # 기존 AssetId 로 들어있던 데이터도 대문자로 자동 렌더링되도록 방어 처리
+            if ctype.lower() == "assetid": ctype = "AssetID"
+            elif ctype.lower() == "assetid[]": ctype = "AssetID[]"
+            combo_type.set(ctype)
+            
         combo_type.grid(row=row_idx, column=1, padx=5, pady=2)
         self.t1_1_row_widgets.append((ent_name, combo_type))
 
@@ -256,14 +258,15 @@ class LeftPanel(tk.Frame):
         guide_frame = tk.Frame(inner, bg="#252526", bd=1, relief="solid")
         guide_frame.pack(fill="x", padx=10, pady=(15, 10))
         
-        tk.Label(guide_frame, text="📌 [메타데이터 (후보키) 추출]\n\n배열([])과 float 타입을 자동으로 걸러내고 유효한 헤더 조합만 JSON으로 저장합니다.", font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
+        guide_text = "📌 [메타데이터 (슈퍼키) 추출]\n\n배열([])과 float 타입을 배제하고 고유하게 식별 가능한 모든 슈퍼키 조합을 추출하여 JSON으로 저장합니다.\n※ 엑셀 스키마에 UNIQUE와 NOT NULL이 선언된 컬럼은 내부 검사를 건너뛰어 초고속(Fast-Track)으로 추출됩니다."
+        tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
 
         opt_frame2 = tk.Frame(inner, bg="#1E1E1E")
         opt_frame2.pack(fill="x", padx=10, pady=5)
-        tk.Label(opt_frame2, text="최대 후보키 조합 길이 (연산량 조절용):", font=("맑은 고딕", 10), fg="#CCCCCC", bg="#1E1E1E").pack(side="left")
+        tk.Label(opt_frame2, text="최대 슈퍼키 조합 길이 (연산량 조절용):", font=("맑은 고딕", 10), fg="#CCCCCC", bg="#1E1E1E").pack(side="left")
         tk.Spinbox(opt_frame2, from_=1, to=10, textvariable=self.app.max_combo_var, width=5, font=("Consolas", 10)).pack(side="left", padx=10)
 
-        self.app.btn4 = tk.Button(inner, text="메타데이터(JSON) 자동 갱신 및 추출 (현재 작업 경로 내)", font=("맑은 고딕", 11, "bold"), bg="#9C27B0", fg="white", bd=0, height=3, command=self.app.run_candidate_key_finder)
+        self.app.btn4 = tk.Button(inner, text="메타데이터(슈퍼키) 자동 추출 및 JSON 갱신 (현재 경로)", font=("맑은 고딕", 11, "bold"), bg="#9C27B0", fg="white", bd=0, height=3, command=self.app.run_super_key_finder)
         self.app.btn4.pack(fill="x", padx=10, pady=10)
 
         self.app.progress_bar = ttk.Progressbar(inner, variable=self.app.progress_var, maximum=100)

@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 
 from utils import get_initial_dir, find_workspace_root, create_workspace_root
 from core.converter import convert_xlsx_file, convert_ansi_csv_to_utf8
-from core.candidate_finder import find_candidate_keys
+from core.superkey_finder import find_super_keys
 from core.validator import run_global_validation
 from core.watcher import PipelineWatcher
 
@@ -59,7 +59,7 @@ class AppGUI(tk.Tk):
     def _restart_watcher_if_needed(self):
         if self.watcher.is_watching and self.workspace_root:
             self.watcher.stop()
-            self.watcher.start(self.workspace_root, True) # 💡 무조건 Root 기준 재귀 감시
+            self.watcher.start(self.workspace_root, True)
             self.right_panel.log("🔄 워크스페이스 전체 감시기 재시작 완료.")
 
     def change_workspace_manual(self):
@@ -211,7 +211,6 @@ class AppGUI(tk.Tk):
         self.target_dir = new_dir
         self.path_entry_var.set(self.target_dir)
         self.right_panel.log(f"\n📂 작업 경로(포커스) 변경됨: {self.target_dir}")
-        # 작업 폴더 변경 시 하위 폴더 갱신
         if hasattr(self.left_panel, '_t1_refresh_files'):
             self.left_panel._t1_refresh_files()
 
@@ -251,7 +250,6 @@ class AppGUI(tk.Tk):
     def on_option_changed(self):
         state = "포함" if self.include_subdirs.get() else "제외"
         self.right_panel.log(f"\n⚙️ 옵션 변경: 하위 폴더 {state}")
-        # 감시기는 무조건 Root 재귀 검색이므로 옵션 변경 시 재시작 안 함
 
     def run_xlsx_to_csv_all(self):
         if not self.workspace_root:
@@ -299,7 +297,7 @@ class AppGUI(tk.Tk):
             messagebox.showwarning("경고", "워크스페이스가 설정되지 않았습니다.")
             return
         if not self.watcher.is_watching:
-            self.watcher.start(self.workspace_root, True) # 💡 [FIX] 무조건 Root 전체 감시
+            self.watcher.start(self.workspace_root, True)
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
             self.right_panel.log(f"\n🕵️‍♂️ [자동 변환 감시 시작] (범위: {self.workspace_root} 전체)")
         else:
@@ -307,15 +305,15 @@ class AppGUI(tk.Tk):
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 자동 변환 감시 모드 시작", bg="#6C757D")
             self.right_panel.log("\n🛑 [감시 중지]")
 
-    def run_candidate_key_finder(self):
+    def run_super_key_finder(self):
         if not self.workspace_root:
             messagebox.showwarning("경고", "워크스페이스가 설정되지 않았습니다.")
             return
         def task():
             self.set_buttons_state(False)
             self.set_progress(0)
-            self.right_panel.log("\n🚀 [작업 시작] 메타데이터 후보키(JSON) 추출")
-            find_candidate_keys(self.target_dir, self.max_combo_var.get(), self.include_subdirs.get(), self.right_panel.log, self.set_progress)
+            self.right_panel.log("\n🚀 [작업 시작] 메타데이터 슈퍼키(JSON) 추출 (Fast-Track 포함)")
+            find_super_keys(self.target_dir, self.max_combo_var.get(), self.include_subdirs.get(), self.right_panel.log, self.set_progress)
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()
 

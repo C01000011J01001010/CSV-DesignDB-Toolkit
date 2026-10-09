@@ -4,37 +4,5 @@
     "QuestID"
   ],
   "foreignKeys": {},
-  "candidateKeys": [
-    [
-      "QuestID"
-    ],
-    [
-      "QuestCode"
-    ],
-    [
-      "QuestName"
-    ],
-    [
-      "RewardGold"
-    ],
-    [
-      "RewardExp"
-    ],
-    [
-      "Chapter",
-      "QuestNumber"
-    ],
-    [
-      "Chapter",
-      "Objective"
-    ],
-    [
-      "QuestNumber",
-      "RequiredLevel"
-    ],
-    [
-      "RequiredLevel",
-      "Objective"
-    ]
-  ]
+  "superKeys": []
 }

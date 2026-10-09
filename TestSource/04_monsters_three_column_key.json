@@ -5,57 +5,5 @@
     "DisplayName"
   ],
   "foreignKeys": {},
-  "candidateKeys": [
-    [
-      "HP"
-    ],
-    [
-      "Attack"
-    ],
-    [
-      "Exp"
-    ],
-    [
-      "Zone",
-      "Defense"
-    ],
-    [
-      "Zone",
-      "DisplayName"
-    ],
-    [
-      "Species",
-      "Defense"
-    ],
-    [
-      "Variant",
-      "DropRate"
-    ],
-    [
-      "Defense",
-      "MoveSpeed"
-    ],
-    [
-      "Defense",
-      "DropRate"
-    ],
-    [
-      "Defense",
-      "DisplayName"
-    ],
-    [
-      "DropRate",
-      "DisplayName"
-    ],
-    [
-      "Zone",
-      "Species",
-      "Variant"
-    ],
-    [
-      "Zone",
-      "Variant",
-      "MoveSpeed"
-    ]
-  ]
+  "superKeys": []
 }

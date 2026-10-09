@@ -6,22 +6,5 @@
     "Value"
   ],
   "foreignKeys": {},
-  "candidateKeys": [
-    [
-      "RecordID"
-    ],
-    [
-      "Description"
-    ],
-    [
-      "Region",
-      "Type",
-      "Value"
-    ],
-    [
-      "Type",
-      "Level",
-      "Value"
-    ]
-  ]
+  "superKeys": []
 }

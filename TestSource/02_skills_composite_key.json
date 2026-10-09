@@ -5,28 +5,5 @@
     "SkillSlot"
   ],
   "foreignKeys": {},
-  "candidateKeys": [
-    [
-      "SkillName"
-    ],
-    [
-      "Description"
-    ],
-    [
-      "CharacterClass",
-      "SkillSlot"
-    ],
-    [
-      "CharacterClass",
-      "Power"
-    ],
-    [
-      "CharacterClass",
-      "ManaCost"
-    ],
-    [
-      "CharacterClass",
-      "UnlockLevel"
-    ]
-  ]
+  "superKeys": []
 }

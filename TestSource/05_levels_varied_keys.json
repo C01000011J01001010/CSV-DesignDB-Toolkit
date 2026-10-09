@@ -5,45 +5,5 @@
     "RecommendedPower"
   ],
   "foreignKeys": {},
-  "candidateKeys": [
-    [
-      "LevelID"
-    ],
-    [
-      "LevelCode"
-    ],
-    [
-      "World",
-      "Stage"
-    ],
-    [
-      "World",
-      "RecommendedPower"
-    ],
-    [
-      "World",
-      "TimeLimit"
-    ],
-    [
-      "Stage",
-      "RecommendedPower"
-    ],
-    [
-      "Difficulty",
-      "RecommendedPower"
-    ],
-    [
-      "RecommendedPower",
-      "TimeLimit"
-    ],
-    [
-      "RecommendedPower",
-      "EnemyCount"
-    ],
-    [
-      "World",
-      "EnemyCount",
-      "RewardTier"
-    ]
-  ]
+  "superKeys": []
 }

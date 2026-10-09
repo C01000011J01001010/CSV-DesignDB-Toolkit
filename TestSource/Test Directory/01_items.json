@@ -12,12 +12,101 @@
       "targetTable": "csv Source\\02_skills_composite_key.csv"
     }
   },
-  "candidateKeys": [
+  "superKeys": [
     [
       "ItemID"
     ],
     [
+      "ItemName"
+    ],
+    [
       "DisplayText"
+    ],
+    [
+      "AssetPath"
+    ],
+    [
+      "Internal_Name"
+    ],
+    [
+      "ItemID",
+      "ItemName"
+    ],
+    [
+      "ItemID",
+      "Level"
+    ],
+    [
+      "ItemID",
+      "IsTradable"
+    ],
+    [
+      "ItemID",
+      "DisplayText"
+    ],
+    [
+      "ItemID",
+      "AssetPath"
+    ],
+    [
+      "ItemID",
+      "Internal_Name"
+    ],
+    [
+      "ItemName",
+      "Level"
+    ],
+    [
+      "ItemName",
+      "IsTradable"
+    ],
+    [
+      "ItemName",
+      "DisplayText"
+    ],
+    [
+      "ItemName",
+      "AssetPath"
+    ],
+    [
+      "ItemName",
+      "Internal_Name"
+    ],
+    [
+      "Level",
+      "DisplayText"
+    ],
+    [
+      "Level",
+      "AssetPath"
+    ],
+    [
+      "Level",
+      "Internal_Name"
+    ],
+    [
+      "IsTradable",
+      "DisplayText"
+    ],
+    [
+      "IsTradable",
+      "AssetPath"
+    ],
+    [
+      "IsTradable",
+      "Internal_Name"
+    ],
+    [
+      "DisplayText",
+      "AssetPath"
+    ],
+    [
+      "DisplayText",
+      "Internal_Name"
+    ],
+    [
+      "AssetPath",
+      "Internal_Name"
     ]
   ]
 }

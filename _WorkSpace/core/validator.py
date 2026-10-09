@@ -8,12 +8,14 @@ def parse_header(raw_str):
     name = str(raw_str).strip()
     c_type = ""
     constraints = []
+    is_schema = False # 💡 [FIX] 이 컬럼이 {} 로 감싸진 스키마 컬럼인지 판별
     if name.startswith('{') and name.endswith('}'):
+        is_schema = True
         parts = [p.strip() for p in name[1:-1].split('/')]
         name = parts[0]
         if len(parts) > 1: c_type = parts[1].strip()
         if len(parts) > 2: constraints = [p.strip() for p in parts[2:]]
-    return name, c_type, constraints
+    return name, c_type, constraints, is_schema
 
 def check_type(data_series, c_type_base):
     data_str = data_series.astype(str).str.strip()
@@ -91,7 +93,7 @@ def run_global_validation(workspace_root, on_log, on_progress):
 
     if missing_meta or missing_pk:
         on_log("\n🚨 [검증 중단] 유효한 메타데이터가 없는 테이블이 발견되었습니다.")
-        on_log("다음 파일들은 [3. 메타(후보키) 추출] 및 [4. 메타 관리(PK/FK)] 탭에서 기본키(PK)를 먼저 설정해야 전체 무결성 검사가 가능합니다.\n")
+        on_log("다음 파일들은 [3. 추출] 및 [4. 메타 관리] 탭에서 기본키(PK)를 먼저 설정해야 무결성 검사가 가능합니다.\n")
         for f in missing_meta:
             on_log(f" ❌ {f} (JSON 메타파일 누락 또는 파싱 실패)")
         for f in missing_pk:
@@ -116,9 +118,10 @@ def run_global_validation(workspace_root, on_log, on_progress):
             rename_map = {}
             col_info = {}
             for c in df.columns:
-                c_name, c_type, constraints = parse_header(c)
+                c_name, c_type, constraints, is_schema = parse_header(c)
                 rename_map[c] = c_name
-                col_info[c_name] = {'type': c_type, 'constraints': constraints, 'raw': c}
+                # 💡 is_schema 정보를 함께 딕셔너리에 저장
+                col_info[c_name] = {'type': c_type, 'constraints': constraints, 'raw': c, 'is_schema': is_schema}
             
             df = df.rename(columns=rename_map)
             df_dict[base_name] = {'df': df, 'info': col_info, 'meta': meta_dict[base_name]}
@@ -151,13 +154,17 @@ def run_global_validation(workspace_root, on_log, on_progress):
             pk_dup_mask = df.duplicated(subset=pk_cols, keep=False)
             if pk_dup_mask.any():
                 invalid_df = df[pk_dup_mask][pk_cols]
-                # 💡 [FIX] Tuple string rep in PK dup check
                 invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[개체 무결성] 기본키({pk_cols}) 중복 ➔ {format_errors(invalid_series)}")
                 total_errors += 1
 
         for c_name, c_dict in info.items():
             if c_name not in df.columns: continue
+            
+            # 💡 [FIX] {} 로 감싸진 컬럼이 아니라면 단순 메모용 컬럼이므로 도메인 검증 통째로 스킵
+            if not c_dict.get('is_schema', False):
+                continue
+
             c_data = df[c_name]
             constraints = c_dict['constraints']
             c_type_full = c_dict['type']
@@ -180,7 +187,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
             
             if not non_nulls.empty:
                 if is_array:
-                    # 💡 [FIX 1] Array Split Delimiter (1)
                     exploded = non_nulls.astype(str).str.split('|').explode().str.strip()
                     exploded = exploded[exploded != ""]
                     valid_mask = check_type(exploded, c_type_base)
@@ -215,7 +221,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
                     if const_u.startswith("CHECK IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK IN("):-1]
                         allowed = [v.strip() for v in vals_str.split('|')]
-                        # 💡 [FIX 2] Array Split Delimiter (2)
                         items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
                         invalid_mask = ~items_to_check.isin(allowed)
                         if invalid_mask.any():
@@ -226,7 +231,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
                     elif const_u.startswith("CHECK NOT IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK NOT IN("):-1]
                         disallowed = [v.strip() for v in vals_str.split('|')]
-                        # 💡 [FIX 3] Array Split Delimiter (3)
                         items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls.astype(str).str.strip()
                         invalid_mask = items_to_check.isin(disallowed)
                         if invalid_mask.any():
@@ -236,7 +240,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
                                 
                     elif const_u.startswith("CHECK(") and const.endswith(")"):
                         expr = const[len("CHECK("):-1]
-                        # 💡 [FIX 4] Array Split Delimiter (4)
                         items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls
                         
                         failed_idx = []
@@ -290,7 +293,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
             
             if invalid_mask.any():
                 invalid_df = local_subset[invalid_mask]
-                # 💡 [FIX 5] Tuple string rep in FK check
                 invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 유령 참조 값(없는 타겟) 발견 ➔ {format_errors(invalid_series)}")
                 total_errors += 1
