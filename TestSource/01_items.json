@@ -1,8 +1,6 @@
 {
   "csvFileName": "01_items.csv",
-  "primaryKey": [
-    "ItemID"
-  ],
+  "primaryKey": [],
   "foreignKeys": {},
   "superKeys": [
     [

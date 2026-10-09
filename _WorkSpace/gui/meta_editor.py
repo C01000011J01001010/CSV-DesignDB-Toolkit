@@ -39,7 +39,7 @@ class MetaEditorTab(tk.Frame):
         pk_inner = tk.Frame(self.pk_frame, bg="#252526", padx=10, pady=10)
         pk_inner.pack(fill="x")
         
-        tk.Label(pk_inner, text="후보키(Candidate Keys) 목록 중 선택:", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left")
+        tk.Label(pk_inner, text="슈퍼키(Candidate Keys) 목록 중 선택:", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left")
         self.combo_pk = ttk.Combobox(pk_inner, state="readonly", width=40)
         self.combo_pk.pack(side="left", padx=10)
         tk.Button(pk_inner, text="PK 반영/저장", font=("맑은 고딕", 9, "bold"), bg="#E67E22", fg="white", bd=0, command=self.save_pk).pack(side="left")
@@ -120,7 +120,7 @@ class MetaEditorTab(tk.Frame):
             self.app.right_panel.log(f"❌ JSON 로드 실패: {e}")
             return
             
-        c_keys = self.meta_data.get('candidateKeys', [])
+        c_keys = self.meta_data.get('superKeys', [])
         pk = self.meta_data.get('primaryKey', [])
         fks = self.meta_data.get('foreignKeys', {})
         
