@@ -1,4 +1,4 @@
-﻿{ItemID/int},{ItemName/string/UNIQUE},{WeaponType/string/NOT NULL},{Rarity/float/DEFAULT(3.14)},{Level/int/CHECK(VALUE >= 0 AND VALUE <= 100)},{ShopPrice/float/CHECK IN(3.14|1.71)},{SellPrice/float/CHECK NOT IN(3.14|1.71)},{IsTradable/bool/DEFAULT(True)},{DisplayText/string/NOT NULL},{AssetPath/AssetId},{Internal_Name/string/UNIQUE}
+{ItemID/int},{ItemName/string/UNIQUE},{WeaponType/string/NOT NULL},{Rarity/float/DEFAULT(3.14)},{Level/int/CHECK(VALUE >= 0 AND VALUE <= 100)},{ShopPrice/float/CHECK IN(3.14|1.71)},{SellPrice/float/CHECK NOT IN(3.14|1.71)},{IsTradable/bool/DEFAULT(True)},{DisplayText/string/NOT NULL},{AssetPath/AssetId},{Internal_Name/string/UNIQUE}
 1,Rare_Bow_001,Bow,Rare,2,200,100,True,Item 1,Item|Bow_1,item_1
 2,Epic_Staff_002,Staff,Epic,3,300,3.14,True,Item 2,Item|Staff_2,item_2
 3,Legendary_Axe_003,,Legendary,4,400,숫자가 둘이지요,True,Item 3,Item|Axe_3,item_3

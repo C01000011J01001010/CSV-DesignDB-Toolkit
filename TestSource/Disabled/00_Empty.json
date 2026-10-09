@@ -1,0 +1,19 @@
+{
+  "superKeys": [
+    [
+      "id"
+    ],
+    [
+      "name"
+    ],
+    [
+      "id",
+      "name"
+    ]
+  ],
+  "primaryKey": [
+    "id",
+    "name"
+  ],
+  "foreignKeys": {}
+}

@@ -112,8 +112,10 @@ class LeftPanel(tk.Frame):
         if not self.app.workspace_root:
             self.app.right_panel.log("⚠️ 워크스페이스가 설정되지 않았습니다.")
             return
-            
-        files = get_excel_files(self.app.target_dir, self.app.include_subdirs.get())
+        
+        # 💡 [NEW] exclude_prefix 를 UI 변수에서 바로 가져와서 적용
+        prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
+        files = get_excel_files(self.app.target_dir, self.app.include_subdirs.get(), prefix)
         if files:
             self.t1_combo_files['values'] = files
             self.t1_combo_files.current(0)
@@ -158,11 +160,9 @@ class LeftPanel(tk.Frame):
         ent_name.insert(0, name)
         ent_name.grid(row=row_idx, column=0, padx=5, pady=2)
         
-        # 💡 [FIX] AssetId -> AssetID 로 변경
         combo_type = ttk.Combobox(self.t1_1_rows_frame, state="readonly", width=20, 
                                   values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetID", "AssetID[]"])
         if ctype: 
-            # 기존 AssetId 로 들어있던 데이터도 대문자로 자동 렌더링되도록 방어 처리
             if ctype.lower() == "assetid": ctype = "AssetID"
             elif ctype.lower() == "assetid[]": ctype = "AssetID[]"
             combo_type.set(ctype)

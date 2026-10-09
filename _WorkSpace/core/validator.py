@@ -8,7 +8,7 @@ def parse_header(raw_str):
     name = str(raw_str).strip()
     c_type = ""
     constraints = []
-    is_schema = False # 💡 [FIX] 이 컬럼이 {} 로 감싸진 스키마 컬럼인지 판별
+    is_schema = False
     if name.startswith('{') and name.endswith('}'):
         is_schema = True
         parts = [p.strip() for p in name[1:-1].split('/')]
@@ -19,14 +19,10 @@ def parse_header(raw_str):
 
 def check_type(data_series, c_type_base):
     data_str = data_series.astype(str).str.strip()
-    if c_type_base in ['int', 'assetid']:
-        return data_str.str.match(r'^-?\d+$')
-    elif c_type_base == 'float':
-        return data_str.str.match(r'^-?\d+(\.\d+)?$')
-    elif c_type_base == 'bool':
-        return data_str.str.lower().isin(['true', 'false', '0', '1', '0.0', '1.0'])
-    elif c_type_base in ['string', 'enum']:
-        return pd.Series([True]*len(data_series), index=data_series.index)
+    if c_type_base in ['int', 'assetid']: return data_str.str.match(r'^-?\d+$')
+    elif c_type_base == 'float': return data_str.str.match(r'^-?\d+(\.\d+)?$')
+    elif c_type_base == 'bool': return data_str.str.lower().isin(['true', 'false', '0', '1', '0.0', '1.0'])
+    elif c_type_base in ['string', 'enum']: return pd.Series([True]*len(data_series), index=data_series.index)
     return pd.Series([False]*len(data_series), index=data_series.index)
 
 def evaluate_check_expr(val, expr):
@@ -37,11 +33,9 @@ def evaluate_check_expr(val, expr):
             py_expr = expr.upper().replace("VALUE", str(numeric_val)).replace("AND", " and ").replace("OR", " or ")
         except ValueError:
             py_expr = expr.upper().replace("VALUE", f"'{val_str}'").replace("AND", " and ").replace("OR", " or ")
-        
         if any(unsafe in py_expr.lower() for unsafe in ['import', 'exec', 'eval', 'os', 'sys']): return False
         return bool(eval(py_expr))
-    except:
-        return False
+    except: return False
 
 def format_errors(invalid_series, limit=3):
     total = len(invalid_series)
@@ -49,17 +43,17 @@ def format_errors(invalid_series, limit=3):
     for idx, val in invalid_series.head(limit).items():
         row_num = idx + 2 
         items.append(f"{{행{row_num}: '{val}'}}")
-    
     res = "[" + ", ".join(items) + "]"
-    if total > limit:
-        res += f" (외 {total - limit}건)"
+    if total > limit: res += f" (외 {total - limit}건)"
     return res
 
-def run_global_validation(workspace_root, on_log, on_progress):
+# 💡 [NEW] exclude_prefix 매개변수 추가
+def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="Disabled"):
     csv_files = []
     for root, dirs, files in os.walk(workspace_root):
-        if 'Disabled' in root: continue
+        if any(p.startswith(exclude_prefix) for p in root.replace('\\', '/').split('/')): continue
         for file in files:
+            if file.startswith(exclude_prefix): continue
             if file.endswith('.csv'):
                 csv_files.append(os.path.join(root, file))
 
@@ -84,20 +78,16 @@ def run_global_validation(workspace_root, on_log, on_progress):
         try:
             with open(json_file, 'r', encoding='utf-8') as f:
                 meta = json.load(f)
-                if not meta.get('primaryKey'):
-                    missing_pk.append(base_name)
-                else:
-                    meta_dict[base_name] = meta
+                if not meta.get('primaryKey'): missing_pk.append(base_name)
+                else: meta_dict[base_name] = meta
         except Exception:
             missing_meta.append(base_name)
 
     if missing_meta or missing_pk:
         on_log("\n🚨 [검증 중단] 유효한 메타데이터가 없는 테이블이 발견되었습니다.")
         on_log("다음 파일들은 [3. 추출] 및 [4. 메타 관리] 탭에서 기본키(PK)를 먼저 설정해야 무결성 검사가 가능합니다.\n")
-        for f in missing_meta:
-            on_log(f" ❌ {f} (JSON 메타파일 누락 또는 파싱 실패)")
-        for f in missing_pk:
-            on_log(f" ❌ {f} (기본키 미설정)")
+        for f in missing_meta: on_log(f" ❌ {f} (JSON 메타파일 누락 또는 파싱 실패)")
+        for f in missing_pk: on_log(f" ❌ {f} (기본키 미설정)")
         return
 
     on_log("✅ 모든 테이블의 메타데이터 확인 완료. 데이터 로드 시작...\n")
@@ -108,7 +98,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
     for csv_file in csv_files:
         base_name = os.path.basename(csv_file)
         if base_name not in meta_dict: continue
-        
         file_errors[base_name] = [] 
         
         try:
@@ -120,7 +109,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
             for c in df.columns:
                 c_name, c_type, constraints, is_schema = parse_header(c)
                 rename_map[c] = c_name
-                # 💡 is_schema 정보를 함께 딕셔너리에 저장
                 col_info[c_name] = {'type': c_type, 'constraints': constraints, 'raw': c, 'is_schema': is_schema}
             
             df = df.rename(columns=rename_map)
@@ -131,7 +119,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
 
     on_progress(40)
     total_errors = 0
-    
     on_log("🔍 2단계: 개체, 고유, Null, 도메인, 참조 무결성 통합 검사 가동 중...")
     
     for t_name, t_data in df_dict.items():
@@ -160,10 +147,7 @@ def run_global_validation(workspace_root, on_log, on_progress):
 
         for c_name, c_dict in info.items():
             if c_name not in df.columns: continue
-            
-            # 💡 [FIX] {} 로 감싸진 컬럼이 아니라면 단순 메모용 컬럼이므로 도메인 검증 통째로 스킵
-            if not c_dict.get('is_schema', False):
-                continue
+            if not c_dict.get('is_schema', False): continue
 
             c_data = df[c_name]
             constraints = c_dict['constraints']
@@ -217,7 +201,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
             if not non_nulls.empty:
                 for const in constraints:
                     const_u = const.upper()
-                    
                     if const_u.startswith("CHECK IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK IN("):-1]
                         allowed = [v.strip() for v in vals_str.split('|')]
@@ -227,7 +210,6 @@ def run_global_validation(workspace_root, on_log, on_progress):
                             invalid_series = items_to_check[invalid_mask]
                             file_errors[t_name].append(f"[도메인 무결성] '{c_name}' CHECK IN({vals_str}) 위반 ➔ {format_errors(invalid_series)}")
                             total_errors += 1
-                                
                     elif const_u.startswith("CHECK NOT IN(") and const.endswith(")"):
                         vals_str = const[len("CHECK NOT IN("):-1]
                         disallowed = [v.strip() for v in vals_str.split('|')]
@@ -237,18 +219,14 @@ def run_global_validation(workspace_root, on_log, on_progress):
                             invalid_series = items_to_check[invalid_mask]
                             file_errors[t_name].append(f"[도메인 무결성] '{c_name}' CHECK NOT IN 위반 ➔ 금지된 값: {format_errors(invalid_series)}")
                             total_errors += 1
-                                
                     elif const_u.startswith("CHECK(") and const.endswith(")"):
                         expr = const[len("CHECK("):-1]
                         items_to_check = non_nulls.astype(str).str.split('|').explode().str.strip() if is_array else non_nulls
-                        
-                        failed_idx = []
-                        failed_vals = []
+                        failed_idx, failed_vals = [], []
                         for idx, val in items_to_check.items():
                             if not evaluate_check_expr(val, expr):
                                 failed_idx.append(idx)
                                 failed_vals.append(str(val))
-                                
                         if failed_vals:
                             invalid_series = pd.Series(failed_vals, index=failed_idx)
                             file_errors[t_name].append(f"[도메인 무결성] '{c_name}' CHECK({expr}) 위반 ➔ {format_errors(invalid_series)}")
@@ -259,12 +237,11 @@ def run_global_validation(workspace_root, on_log, on_progress):
     for t_name, t_data in df_dict.items():
         df = t_data['df']
         fks = t_data['meta'].get('foreignKeys', {})
-        
         for fk_name, fk_info in fks.items():
             local_cols = fk_info['columns']
             target_table = fk_info['targetTable']
-            
             target_basename = os.path.basename(target_table)
+            
             if target_basename not in df_dict:
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 타겟 테이블 '{target_basename}' 없음")
                 total_errors += 1

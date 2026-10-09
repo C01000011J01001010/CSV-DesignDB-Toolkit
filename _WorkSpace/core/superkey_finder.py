@@ -5,7 +5,7 @@ from itertools import combinations
 
 def parse_header(raw_str):
     name = str(raw_str).strip()
-    c_type = ""  # 💡 [FIX] 타입을 명시하지 않으면 빈 문자열로 처리 (기본 string 간주 제거)
+    c_type = ""
     constraints = []
     if name.startswith('{') and name.endswith('}'):
         parts = [p.strip() for p in name[1:-1].split('/')]
@@ -14,12 +14,16 @@ def parse_header(raw_str):
         if len(parts) > 2: constraints = [p.strip() for p in parts[2:]]
     return name, c_type, constraints
 
-def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress):
+# 💡 [NEW] exclude_prefix 매개변수 추가
+def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress, exclude_prefix="Disabled"):
     csv_files = []
     for root, dirs, files in os.walk(target_dir):
-        if 'Disabled' in root: continue
+        # 예외 처리 Prefix가 포함된 폴더 전체 스킵
+        if any(p.startswith(exclude_prefix) for p in root.replace('\\', '/').split('/')): continue
         if not include_subdirs and root != target_dir: continue
         for file in files:
+            # 예외 처리 Prefix가 포함된 파일 스킵
+            if file.startswith(exclude_prefix): continue
             if file.endswith('.csv'):
                 csv_files.append(os.path.join(root, file))
 
@@ -54,18 +58,9 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress)
 
         for c_name in df.columns:
             c_type = col_types.get(c_name, "")
-            
-            # 1. 타입 허용 및 배제 (int, string, bool, enum, assetid 허용 / float, 배열 배제)
-            if '[]' in c_type or 'float' in c_type:
-                continue
-                
-            # 💡 [FIX] 명시된 5가지 타입이 아니거나 아예 미지정("")이면 슈퍼키 재료에서 배제
-            if c_type not in ['int', 'string', 'bool', 'enum', 'assetid']:
-                continue
-            
-            if df[c_name].isna().any():
-                continue
-            
+            if '[]' in c_type or 'float' in c_type: continue
+            if c_type not in ['int', 'string', 'bool', 'enum', 'assetid']: continue
+            if df[c_name].isna().any(): continue
             eligible_cols.append(c_name)
             
             if 'UNIQUE' in col_constraints.get(c_name, []) and 'NOT NULL' in col_constraints.get(c_name, []):
@@ -75,11 +70,9 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress)
         for r in range(1, min(max_combo, len(eligible_cols)) + 1):
             for combo in combinations(eligible_cols, r):
                 combo = list(combo)
-                
                 if fast_track_cols.intersection(set(combo)):
                     super_keys.append(combo)
                     continue
-                    
                 if not df.duplicated(subset=combo).any():
                     super_keys.append(combo)
 
@@ -92,8 +85,7 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress)
                     meta_data = json.load(f)
             except: pass
             
-        if 'candidateKeys' in meta_data:
-            del meta_data['candidateKeys']
+        if 'candidateKeys' in meta_data: del meta_data['candidateKeys']
             
         meta_data['superKeys'] = super_keys
         if 'primaryKey' not in meta_data: meta_data['primaryKey'] = []
@@ -111,12 +103,9 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress)
             json.dump(meta_data, f, ensure_ascii=False, indent=2)
             
         log_msg = f"✅ {base_name} ➔ 슈퍼키 {len(super_keys)}개 추출 완료"
-        if fast_track_cols:
-            log_msg += f" (Fast-Track: {len(fast_track_cols)}개 컬럼 적용)"
-        if pk and not pk_valid:
-            log_msg += f" (⚠️ 기존 PK {pk}가 더 이상 유효한 조합이 아님!)"
+        if fast_track_cols: log_msg += f" (Fast-Track: {len(fast_track_cols)}개 컬럼 적용)"
+        if pk and not pk_valid: log_msg += f" (⚠️ 기존 PK {pk}가 더 이상 유효한 조합이 아님!)"
         on_log(log_msg)
-        
         on_progress(int((i + 1) / total_files * 100))
 
     on_log("\n🎉 모든 메타데이터 슈퍼키(JSON) 추출 및 갱신이 완료되었습니다!")

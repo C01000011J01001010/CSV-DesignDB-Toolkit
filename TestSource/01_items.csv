@@ -1,4 +1,4 @@
-﻿{ItemID/int},{ItemName/string},{WeaponType/enum},{Rarity/float},{Level/int},{ShopPrice/int},{SellPrice/int},{IsTradable/bool},{DisplayText/string},{AssetPath/AssetId},{Internal_Name/string}
+{ItemID/int},{ItemName/string},{WeaponType/enum},{Rarity/float},{Level/int},{ShopPrice/int},{SellPrice/int},{IsTradable/bool},{DisplayText/string},{AssetPath/AssetId},{Internal_Name/string}
 1,Rare_Bow_001,Bow,Rare,2,200,100,True,Item 1,Item|Bow_1,item_1
 2,Epic_Staff_002,Staff,Epic,3,300,150,True,Item 2,Item|Staff_2,item_2
 3,Legendary_Axe_003,Axe,Legendary,4,400,200,True,Item 3,Item|Axe_3,item_3
