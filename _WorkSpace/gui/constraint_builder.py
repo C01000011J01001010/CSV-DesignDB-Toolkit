@@ -2,6 +2,16 @@ import tkinter as tk
 from tkinter import ttk
 import re
 import os
+import json
+
+def parse_raw_header(header_str):
+    name = str(header_str).strip()
+    c_type = "string"
+    if name.startswith('{') and name.endswith('}'):
+        parts = [p.strip() for p in name[1:-1].split('/')]
+        name = parts[0]
+        if len(parts) > 1: c_type = parts[1].strip()
+    return name, c_type
 
 def parse_constraint_string(c_str):
     c_str = c_str.strip()
@@ -219,42 +229,46 @@ class ColumnConstraintBuilder(tk.Frame):
                 if val: res.append(val)
         return res
 
-# 💡 [FIX] 하드코딩(Entry) 형태에서 기존의 드롭다운(Combobox) 방식으로 원상복구
 class ForeignKeyBuilder(tk.Frame):
-    def __init__(self, parent, app, fk_name="", columns=None, target_table=""):
+    def __init__(self, parent, app, current_file, fk_name="", columns=None, target_table=""):
         super().__init__(parent, bg="#252526", bd=1, relief="solid")
         self.app = app
-        if columns is None: columns = []
+        self.current_file = current_file
+        self.mapped_cols = columns if columns else []
+        self.target_pk_info = []
+        self.local_col_combos = []
         
-        top = tk.Frame(self, bg="#252526")
-        top.pack(fill="x", padx=5, pady=5)
+        r1 = tk.Frame(self, bg="#252526")
+        r1.pack(fill="x", padx=10, pady=10)
         
-        tk.Label(top, text="FK 이름:", bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).pack(side="left")
-        self.ent_name = tk.Entry(top, width=15, font=("Consolas", 10), bg="#1E1E1E", fg="white", insertbackground="white")
+        tk.Label(r1, text="객체명(Name):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left")
+        self.ent_name = tk.Entry(r1, width=20, font=("Consolas", 10), bg="#1E1E1E", fg="white", insertbackground="white")
         self.ent_name.insert(0, fk_name)
         self.ent_name.pack(side="left", padx=5)
         
-        tk.Label(top, text="로컬 컬럼(콤마 구분):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(10, 2))
+        tk.Label(r1, text="타겟 테이블 (Workspace 內):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(15, 5))
+        self.cb_target = ttk.Combobox(r1, state="readonly", width=30, font=("Consolas", 10))
+        self.cb_target.pack(side="left")
         
-        # 콤보박스로 원상복구 (직접 입력도 가능)
-        self.cb_cols = ttk.Combobox(top, width=20, font=("Consolas", 10))
-        self.cb_cols.insert(0, ", ".join(columns))
-        self.cb_cols.pack(side="left", padx=5)
+        btn_del = tk.Button(r1, text="🗑️ 삭제", bg="#DC3545", fg="white", bd=0, padx=8, command=self.destroy)
+        btn_del.pack(side="right", padx=5)
         
-        tk.Label(top, text="대상 테이블(csv):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(10, 2))
+        self.r2 = tk.Frame(self, bg="#252526")
+        self.r2.pack(fill="x", padx=10, pady=(0, 10))
         
-        # 대상 테이블 콤보박스로 원상복구
-        self.cb_target = ttk.Combobox(top, width=20, font=("Consolas", 10))
-        self.cb_target.insert(0, target_table)
-        self.cb_target.pack(side="left", padx=5)
+        tk.Label(self.r2, text="로컬 매핑 컬럼:", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", anchor="n")
+        self.mapping_frame = tk.Frame(self.r2, bg="#252526")
+        self.mapping_frame.pack(side="left", fill="x", expand=True, padx=10)
         
-        tk.Button(top, text="🗑️ 삭제", bg="#DC3545", fg="white", bd=0, font=("맑은 고딕", 8), command=self.destroy).pack(side="right", padx=5)
+        self.cb_target.bind('<Button-1>', self._refresh_target_list)
+        self.cb_target.bind('<<ComboboxSelected>>', self._on_target_selected)
         
-        # 대상 테이블 목록 불러오기 연동
-        self.cb_target.bind('<Button-1>', lambda e: self._refresh_target_tables())
-        self._refresh_target_tables()
-        
-    def _refresh_target_tables(self):
+        self._refresh_target_list(None)
+        if target_table:
+            self.cb_target.set(target_table)
+            self._load_target_mapping(target_table, self.mapped_cols)
+            
+    def _refresh_target_list(self, event):
         if not self.app.workspace_root: return
         csv_files = []
         prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
@@ -263,18 +277,90 @@ class ForeignKeyBuilder(tk.Frame):
             for file in files:
                 if file.startswith(prefix): continue
                 if file.endswith('.csv'):
-                    csv_files.append(file)
+                    # 💡 [핵심 패치 1] 타겟 테이블 목록에도 상대경로/슬래시(/) 완벽 적용!
+                    rel_path = os.path.relpath(os.path.join(root, file), self.app.target_dir).replace('\\', '/')
+                    csv_files.append(rel_path)
         self.cb_target['values'] = csv_files
+
+    def _on_target_selected(self, event):
+        target_file = self.cb_target.get()
+        self._load_target_mapping(target_file, [])
         
+    def _load_target_mapping(self, target_file, pre_mapped_cols):
+        for w in self.mapping_frame.winfo_children(): w.destroy()
+        self.local_col_combos.clear()
+        
+        if not target_file: return
+        
+        # 💡 [핵심 패치 2] target_file이 이제 경로를 포함하므로 os.path.join 이 정상 작동합니다!
+        target_csv_path = os.path.join(self.app.target_dir, target_file)
+        target_json_path = os.path.splitext(target_csv_path)[0] + ".json"
+        
+        target_pks = []
+        if os.path.exists(target_json_path):
+            try:
+                with open(target_json_path, 'r', encoding='utf-8') as f:
+                    jdata = json.load(f)
+                    target_pks = jdata.get('primaryKey', [])
+            except: pass
+            
+        if not target_pks:
+            tk.Label(self.mapping_frame, text="⚠️ 타겟 테이블에 설정된 기본키(PK)가 없습니다.", bg="#252526", fg="#FF5555", font=("맑은 고딕", 9)).pack(anchor="w", pady=2)
+            return
+            
+        pk_types = {}
+        if os.path.exists(target_csv_path):
+            try:
+                with open(target_csv_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    headers = first_line.split(',')
+                    for h in headers:
+                        cname, ctype = parse_raw_header(h)
+                        if cname in target_pks: pk_types[cname] = ctype
+            except: pass
+            
+        local_cols = []
+        current_csv_path = os.path.join(self.app.target_dir, self.current_file)
+        if os.path.exists(current_csv_path):
+            try:
+                with open(current_csv_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    headers = first_line.split(',')
+                    for h in headers:
+                        cname, _ = parse_raw_header(h)
+                        local_cols.append(cname)
+            except: pass
+            
+        for i, pk_col in enumerate(target_pks):
+            ptype = pk_types.get(pk_col, "unknown")
+            row = tk.Frame(self.mapping_frame, bg="#252526")
+            row.pack(fill="x", pady=2)
+            
+            tk.Label(row, text=f"참조 대상: '{pk_col}' ({ptype})   ➔   내 컬럼:", bg="#252526", fg="#FFD700", font=("Consolas", 10)).pack(side="left")
+            
+            cb = ttk.Combobox(row, values=local_cols, state="readonly", width=25, font=("Consolas", 10))
+            cb.pack(side="left", padx=10)
+            
+            if i < len(pre_mapped_cols) and pre_mapped_cols[i] in local_cols:
+                cb.set(pre_mapped_cols[i])
+            elif pk_col in local_cols:
+                cb.set(pk_col)
+                
+            self.local_col_combos.append(cb)
+            
     def get_data(self):
         name = self.ent_name.get().strip()
-        cols_str = self.cb_cols.get().strip()
         target = self.cb_target.get().strip()
+        if not name or not target: return None
         
-        if not name or not cols_str or not target: return None
-        cols = [c.strip() for c in cols_str.split(',') if c.strip()]
-        if not cols: return None
+        cols = []
+        for cb in self.local_col_combos:
+            val = cb.get()
+            if not val: return None
+            cols.append(val)
             
+        if not cols: return None
+        
         return {
             "name": name,
             "columns": cols,

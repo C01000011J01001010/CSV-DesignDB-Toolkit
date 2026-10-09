@@ -15,5 +15,18 @@
     "id",
     "name"
   ],
-  "foreignKeys": {}
+  "foreignKeys": {
+    "testFK": {
+      "columns": [
+        "id"
+      ],
+      "targetTable": "01_items.csv"
+    },
+    "testFK2": {
+      "columns": [
+        "name"
+      ],
+      "targetTable": "01_items.csv"
+    }
+  }
 }

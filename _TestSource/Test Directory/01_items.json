@@ -1,15 +1,16 @@
 {
   "csvFileName": "01_items.csv",
   "primaryKey": [
-    "ItemID"
+    "ItemID",
+    "ItemName"
   ],
   "foreignKeys": {
-    "testForign": {
+    "fix": {
       "columns": [
-        "ItemName",
-        "DisplayText"
+        "ItemID",
+        "ItemName"
       ],
-      "targetTable": "csv Source\\02_skills_composite_key.csv"
+      "targetTable": "Disabled/00_Empty.csv"
     }
   },
   "superKeys": [

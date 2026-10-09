@@ -47,7 +47,7 @@ class MetaEditorTab(tk.Frame):
         self.combo_pk.pack(side="left", padx=10)
 
     def _build_fk_area(self):
-        fk_frame = tk.LabelFrame(self.main_area, text=" 외래키(FK) 설정 ", font=("맑은 고딕", 10, "bold"), bg="#1E1E1E", fg="#FFD700")
+        fk_frame = tk.LabelFrame(self.main_area, text=" 🔗 Foreign Keys (외래키) 객체 매핑 ", font=("맑은 고딕", 10, "bold"), bg="#1E1E1E", fg="#00FF66")
         fk_frame.pack(fill="both", expand=True, pady=5, padx=5)
 
         sf = ScrollableFrame(fk_frame)
@@ -56,7 +56,7 @@ class MetaEditorTab(tk.Frame):
 
         btn_frame = tk.Frame(fk_frame, bg="#1E1E1E")
         btn_frame.pack(fill="x", pady=5, padx=5)
-        tk.Button(btn_frame, text="+ 외래키 관계 추가", font=("맑은 고딕", 9), bg="#444444", fg="white", bd=0, command=self._add_fk_builder).pack(side="left")
+        tk.Button(btn_frame, text="+ FK 객체 추가", font=("맑은 고딕", 9, "bold"), bg="#28A745", fg="white", bd=0, command=self._add_fk_builder).pack(side="left")
 
     def _refresh_files(self):
         if not self.app.workspace_root:
@@ -71,7 +71,7 @@ class MetaEditorTab(tk.Frame):
             for file in files:
                 if file.startswith(prefix): continue
                 if file.endswith('.json') and not file.endswith('.csvdesigndb'):
-                    rel_path = os.path.relpath(os.path.join(root, file), self.app.target_dir)
+                    rel_path = os.path.relpath(os.path.join(root, file), self.app.target_dir).replace('\\', '/')
                     json_files.append(rel_path)
 
         if json_files:
@@ -125,13 +125,16 @@ class MetaEditorTab(tk.Frame):
         self.fk_builders.clear()
 
         fks = self.meta_data.get('foreignKeys', {})
+        current_csv = self.combo_files.get().replace('.json', '.csv')
+
         for fk_name, fk_info in fks.items():
-            b = ForeignKeyBuilder(self.fk_inner, self.app, fk_name, fk_info.get('columns', []), fk_info.get('targetTable', ''))
+            b = ForeignKeyBuilder(self.fk_inner, self.app, current_csv, fk_name, fk_info.get('columns', []), fk_info.get('targetTable', ''))
             b.pack(fill="x", pady=5)
             self.fk_builders.append(b)
 
     def _add_fk_builder(self):
-        b = ForeignKeyBuilder(self.fk_inner, self.app)
+        current_csv = self.combo_files.get().replace('.json', '.csv')
+        b = ForeignKeyBuilder(self.fk_inner, self.app, current_csv)
         b.pack(fill="x", pady=5)
         self.fk_builders.append(b)
 
@@ -147,16 +150,24 @@ class MetaEditorTab(tk.Frame):
             self.meta_data['primaryKey'] = [c.strip() for c in pk_val.split("+")]
 
         new_fks = {}
+        active_builders = []
+        
+        # 💡 [핵심 버그 수정] 삭제된 유령 위젯(Ghost reference) 필터링
         for b in self.fk_builders:
+            if not b.winfo_exists():
+                continue # 사용자가 '삭제' 버튼을 눌러 파괴된 위젯은 건너뜀
+                
+            active_builders.append(b)
             data = b.get_data()
             if not data:
-                self.app.right_panel.log("⚠️ 유효하지 않은 외래키 설정이 있어 무시되었습니다.")
+                self.app.right_panel.log("⚠️ 매핑이 완료되지 않은 외래키 설정이 있어 무시되었습니다.")
                 continue
             new_fks[data['name']] = {
                 "columns": data['columns'],
                 "targetTable": data['targetTable']
             }
-        
+            
+        self.fk_builders = active_builders # 리스트 깨끗하게 갱신
         self.meta_data['foreignKeys'] = new_fks
 
         try:
