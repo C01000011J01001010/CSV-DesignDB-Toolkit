@@ -10,7 +10,8 @@ def parse_raw_header(header_str):
     if name.startswith('{') and name.endswith('}'):
         parts = [p.strip() for p in name[1:-1].split('/')]
         name = parts[0]
-        if len(parts) > 1: c_type = parts[1].strip()
+        # 💡 [타입 버그 수정] 대소문자 구분을 없애기 위해 무조건 lower() 적용
+        if len(parts) > 1: c_type = parts[1].strip().lower()
     return name, c_type
 
 def parse_constraint_string(c_str):
@@ -277,7 +278,6 @@ class ForeignKeyBuilder(tk.Frame):
             for file in files:
                 if file.startswith(prefix): continue
                 if file.endswith('.csv'):
-                    # 💡 [핵심 패치 1] 타겟 테이블 목록에도 상대경로/슬래시(/) 완벽 적용!
                     rel_path = os.path.relpath(os.path.join(root, file), self.app.target_dir).replace('\\', '/')
                     csv_files.append(rel_path)
         self.cb_target['values'] = csv_files
@@ -292,7 +292,6 @@ class ForeignKeyBuilder(tk.Frame):
         
         if not target_file: return
         
-        # 💡 [핵심 패치 2] target_file이 이제 경로를 포함하므로 os.path.join 이 정상 작동합니다!
         target_csv_path = os.path.join(self.app.target_dir, target_file)
         target_json_path = os.path.splitext(target_csv_path)[0] + ".json"
         
@@ -319,7 +318,8 @@ class ForeignKeyBuilder(tk.Frame):
                         if cname in target_pks: pk_types[cname] = ctype
             except: pass
             
-        local_cols = []
+        # 💡 [핵심 버그 픽스] 현재 내 테이블의 컬럼과 그 '타입'을 모두 딕셔너리로 수집합니다.
+        local_col_types = {}
         current_csv_path = os.path.join(self.app.target_dir, self.current_file)
         if os.path.exists(current_csv_path):
             try:
@@ -327,23 +327,27 @@ class ForeignKeyBuilder(tk.Frame):
                     first_line = f.readline().strip()
                     headers = first_line.split(',')
                     for h in headers:
-                        cname, _ = parse_raw_header(h)
-                        local_cols.append(cname)
+                        cname, ctype = parse_raw_header(h)
+                        local_col_types[cname] = ctype
             except: pass
             
         for i, pk_col in enumerate(target_pks):
-            ptype = pk_types.get(pk_col, "unknown")
+            ptype = pk_types.get(pk_col, "string")
+            
+            # 💡 [핵심 버그 픽스] 타겟 PK의 타입(ptype)과 완벽하게 일치하는 컬럼만 필터링합니다!
+            matched_local_cols = [c for c, t in local_col_types.items() if t == ptype]
+            
             row = tk.Frame(self.mapping_frame, bg="#252526")
             row.pack(fill="x", pady=2)
             
             tk.Label(row, text=f"참조 대상: '{pk_col}' ({ptype})   ➔   내 컬럼:", bg="#252526", fg="#FFD700", font=("Consolas", 10)).pack(side="left")
             
-            cb = ttk.Combobox(row, values=local_cols, state="readonly", width=25, font=("Consolas", 10))
+            cb = ttk.Combobox(row, values=matched_local_cols, state="readonly", width=25, font=("Consolas", 10))
             cb.pack(side="left", padx=10)
             
-            if i < len(pre_mapped_cols) and pre_mapped_cols[i] in local_cols:
+            if i < len(pre_mapped_cols) and pre_mapped_cols[i] in matched_local_cols:
                 cb.set(pre_mapped_cols[i])
-            elif pk_col in local_cols:
+            elif pk_col in matched_local_cols:
                 cb.set(pk_col)
                 
             self.local_col_combos.append(cb)
