@@ -68,6 +68,12 @@ class LeftPanel(tk.Frame):
         btn_load = tk.Button(top_frame, text="헤더 로드", font=("맑은 고딕", 9, "bold"), bg="#007ACC", fg="white", bd=0, command=self._t1_load_headers)
         btn_load.pack(side="left", padx=2)
 
+        # 💡 [NEW] 스키마 범위 안내 툴팁 추가
+        guide_frame = tk.Frame(self.tab1, bg="#252526", bd=1, relief="solid")
+        guide_frame.pack(fill="x", padx=10, pady=(0, 5))
+        guide_text = "📌 [안내] `{}` 기호가 포함된 최초의 행/열부터 마지막 `{}` 열까지만 스키마와 데이터로 인식합니다. (바깥 여백 및 메모 무시)"
+        tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=5).pack(fill="x")
+
         self.sub_notebook = ttk.Notebook(self.tab1)
         self.sub_notebook.pack(fill="both", expand=True, padx=5, pady=5)
         
@@ -239,6 +245,12 @@ class LeftPanel(tk.Frame):
         scroll_frame = ScrollableFrame(self.tab2)
         scroll_frame.pack(fill="both", expand=True)
         inner = scroll_frame.inner_frame
+        
+        # 💡 [NEW] CSV 변환 탭 변환 범위 안내 툴팁
+        guide_frame = tk.Frame(inner, bg="#252526", bd=1, relief="solid")
+        guide_frame.pack(fill="x", padx=10, pady=(15, 10))
+        guide_text = "📌 [파싱 범위 안내]\n\n엑셀 문서에서 `{}` 기호가 처음 시작되는 행과 열부터 마지막 `{}` 열 사이의 데이터만\n유효한 스키마(바운딩 박스) 영역으로 자동 크롭(Crop)되어 CSV로 변환됩니다."
+        tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
         
         self.app.btn1 = tk.Button(inner, text="엑셀 ➔ CSV 전체 변환 (현재 작업 경로 내)", font=("맑은 고딕", 11, "bold"), bg="#007ACC", fg="white", bd=0, height=2, command=self.app.run_xlsx_to_csv_all)
         self.app.btn1.pack(fill="x", padx=10, pady=10)
