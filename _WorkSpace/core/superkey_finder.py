@@ -14,15 +14,12 @@ def parse_header(raw_str):
         if len(parts) > 2: constraints = [p.strip() for p in parts[2:]]
     return name, c_type, constraints
 
-# 💡 [NEW] exclude_prefix 매개변수 추가
 def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress, exclude_prefix="Disabled"):
     csv_files = []
     for root, dirs, files in os.walk(target_dir):
-        # 예외 처리 Prefix가 포함된 폴더 전체 스킵
         if any(p.startswith(exclude_prefix) for p in root.replace('\\', '/').split('/')): continue
         if not include_subdirs and root != target_dir: continue
         for file in files:
-            # 예외 처리 Prefix가 포함된 파일 스킵
             if file.startswith(exclude_prefix): continue
             if file.endswith('.csv'):
                 csv_files.append(os.path.join(root, file))
@@ -33,14 +30,15 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress,
 
     total_files = len(csv_files)
     for i, csv_file in enumerate(csv_files):
-        base_name = os.path.basename(csv_file)
+        # 💡 [NEW] 경로 포함하여 출력
+        rel_path = os.path.relpath(csv_file, target_dir)
         json_file = os.path.splitext(csv_file)[0] + ".json"
         
         try:
             try: df = pd.read_csv(csv_file, encoding='utf-8')
             except UnicodeDecodeError: df = pd.read_csv(csv_file, encoding='cp949')
         except Exception as e:
-            on_log(f"⚠️ {base_name} 읽기 실패: {e}")
+            on_log(f"⚠️ {rel_path} 읽기 실패: {e}")
             continue
 
         rename_map = {}
@@ -102,7 +100,7 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress,
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(meta_data, f, ensure_ascii=False, indent=2)
             
-        log_msg = f"✅ {base_name} ➔ 슈퍼키 {len(super_keys)}개 추출 완료"
+        log_msg = f"✅ {rel_path} ➔ 슈퍼키 {len(super_keys)}개 추출 완료"
         if fast_track_cols: log_msg += f" (Fast-Track: {len(fast_track_cols)}개 컬럼 적용)"
         if pk and not pk_valid: log_msg += f" (⚠️ 기존 PK {pk}가 더 이상 유효한 조합이 아님!)"
         on_log(log_msg)

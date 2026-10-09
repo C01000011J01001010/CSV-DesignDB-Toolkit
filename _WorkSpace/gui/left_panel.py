@@ -113,7 +113,6 @@ class LeftPanel(tk.Frame):
             self.app.right_panel.log("⚠️ 워크스페이스가 설정되지 않았습니다.")
             return
         
-        # 💡 [NEW] exclude_prefix 를 UI 변수에서 바로 가져와서 적용
         prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
         files = get_excel_files(self.app.target_dir, self.app.include_subdirs.get(), prefix)
         if files:

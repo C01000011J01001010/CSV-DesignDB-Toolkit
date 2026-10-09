@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import re
+import os
 
 def parse_constraint_string(c_str):
     c_str = c_str.strip()
@@ -217,3 +218,65 @@ class ColumnConstraintBuilder(tk.Frame):
                 val = child.get_value()
                 if val: res.append(val)
         return res
+
+# 💡 [FIX] 하드코딩(Entry) 형태에서 기존의 드롭다운(Combobox) 방식으로 원상복구
+class ForeignKeyBuilder(tk.Frame):
+    def __init__(self, parent, app, fk_name="", columns=None, target_table=""):
+        super().__init__(parent, bg="#252526", bd=1, relief="solid")
+        self.app = app
+        if columns is None: columns = []
+        
+        top = tk.Frame(self, bg="#252526")
+        top.pack(fill="x", padx=5, pady=5)
+        
+        tk.Label(top, text="FK 이름:", bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).pack(side="left")
+        self.ent_name = tk.Entry(top, width=15, font=("Consolas", 10), bg="#1E1E1E", fg="white", insertbackground="white")
+        self.ent_name.insert(0, fk_name)
+        self.ent_name.pack(side="left", padx=5)
+        
+        tk.Label(top, text="로컬 컬럼(콤마 구분):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(10, 2))
+        
+        # 콤보박스로 원상복구 (직접 입력도 가능)
+        self.cb_cols = ttk.Combobox(top, width=20, font=("Consolas", 10))
+        self.cb_cols.insert(0, ", ".join(columns))
+        self.cb_cols.pack(side="left", padx=5)
+        
+        tk.Label(top, text="대상 테이블(csv):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(10, 2))
+        
+        # 대상 테이블 콤보박스로 원상복구
+        self.cb_target = ttk.Combobox(top, width=20, font=("Consolas", 10))
+        self.cb_target.insert(0, target_table)
+        self.cb_target.pack(side="left", padx=5)
+        
+        tk.Button(top, text="🗑️ 삭제", bg="#DC3545", fg="white", bd=0, font=("맑은 고딕", 8), command=self.destroy).pack(side="right", padx=5)
+        
+        # 대상 테이블 목록 불러오기 연동
+        self.cb_target.bind('<Button-1>', lambda e: self._refresh_target_tables())
+        self._refresh_target_tables()
+        
+    def _refresh_target_tables(self):
+        if not self.app.workspace_root: return
+        csv_files = []
+        prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
+        for root, dirs, files in os.walk(self.app.target_dir):
+            if any(p.startswith(prefix) for p in root.replace('\\', '/').split('/')): continue
+            for file in files:
+                if file.startswith(prefix): continue
+                if file.endswith('.csv'):
+                    csv_files.append(file)
+        self.cb_target['values'] = csv_files
+        
+    def get_data(self):
+        name = self.ent_name.get().strip()
+        cols_str = self.cb_cols.get().strip()
+        target = self.cb_target.get().strip()
+        
+        if not name or not cols_str or not target: return None
+        cols = [c.strip() for c in cols_str.split(',') if c.strip()]
+        if not cols: return None
+            
+        return {
+            "name": name,
+            "columns": cols,
+            "targetTable": target
+        }
