@@ -1,4 +1,5 @@
 import os
+import json
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
@@ -30,8 +31,11 @@ class AppGUI(tk.Tk):
         self.target_dir = get_initial_dir()
         self.workspace_root = None
         self.workspace_file = None
+        self._is_loading_config = False # 설정 로드 중 UI 이벤트 무시용 플래그
+        
+        # 💡 [수정] 기본값 4 -> 2 하향
         self.include_subdirs = tk.BooleanVar(value=True)
-        self.max_combo_var = tk.IntVar(value=4)
+        self.max_combo_var = tk.IntVar(value=2)
         self.progress_var = tk.DoubleVar()
 
         self.setup_ui()
@@ -39,13 +43,92 @@ class AppGUI(tk.Tk):
         
         self._init_workspace()
         
+        # 💡 [NEW] UI 설정값이 바뀔 때마다 JSON 파일 자동 갱신 트리거
+        self.include_subdirs.trace_add("write", lambda *a: self.save_workspace_config())
+        self.max_combo_var.trace_add("write", lambda *a: self.save_workspace_config())
+        
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    # 💡 [NEW] 프로젝트 설정 로드 및 마이그레이션 메서드
+    def load_workspace_config(self):
+        if not self.workspace_root or not self.workspace_file: return
+        
+        filepath = os.path.join(self.workspace_root, self.workspace_file)
+        
+        # [마이그레이션 로직] 구형 .root 발견 시 .csvdesigndb로 승격
+        if self.workspace_file.endswith('.root'):
+            proj_name = self.workspace_file.replace('.root', '').replace('__csvMetaRoot_', '').replace('__', '')
+            if not proj_name: proj_name = "MigratedProject"
+            
+            new_file = f"{proj_name}.csvdesigndb"
+            new_filepath = os.path.join(self.workspace_root, new_file)
+            
+            config_data = {
+                "projectName": proj_name,
+                "toolkitVersion": "1.1.0",
+                "settings": {
+                    "maxSuperkeyLength": self.max_combo_var.get(),
+                    "includeSubDirectories": self.include_subdirs.get()
+                },
+                "created_at": "Migrated from .root"
+            }
+            try:
+                with open(new_filepath, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, ensure_ascii=False, indent=4)
+                os.remove(filepath)
+                self.workspace_file = new_file
+                self.right_panel.log(f"🔄 구형 워크스페이스(.root)를 신형 포맷({new_file})으로 자동 마이그레이션 했습니다.")
+                filepath = new_filepath
+            except Exception as e:
+                self.right_panel.log(f"⚠️ 설정 파일 마이그레이션 실패: {e}")
+                return
+
+        # JSON 읽어서 UI 갱신
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                settings = data.get("settings", {})
+                if "maxSuperkeyLength" in settings:
+                    self.max_combo_var.set(settings["maxSuperkeyLength"])
+                if "includeSubDirectories" in settings:
+                    self.include_subdirs.set(settings["includeSubDirectories"])
+        except Exception as e:
+            self.right_panel.log(f"⚠️ 프로젝트 설정 로드 실패: {e}")
+
+    # 💡 [NEW] UI 조작 시 호출되는 자동 저장 메서드
+    def save_workspace_config(self):
+        if self._is_loading_config: return # 로드 중에는 저장 방지
+        if not self.workspace_root or not self.workspace_file or not self.workspace_file.endswith('.csvdesigndb'):
+            return
+            
+        filepath = os.path.join(self.workspace_root, self.workspace_file)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except:
+            data = {"projectName": self.workspace_file.replace('.csvdesigndb', ''), "settings": {}}
+            
+        data["settings"] = {
+            "maxSuperkeyLength": self.max_combo_var.get(),
+            "includeSubDirectories": self.include_subdirs.get()
+        }
+        
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except:
+            pass
 
     def _init_workspace(self):
         w_root, w_file = find_workspace_root(self.target_dir)
         if w_root:
             self.workspace_root = w_root
             self.workspace_file = w_file
+            
+            self._is_loading_config = True
+            self.load_workspace_config()
+            self._is_loading_config = False
+            
             self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
             self.right_panel.log(f"✅ 워크스페이스 로드 성공: {self.workspace_file}")
             
@@ -53,7 +136,7 @@ class AppGUI(tk.Tk):
                 self.target_dir = self.workspace_root
                 self.path_entry_var.set(self.target_dir)
         else:
-            self.right_panel.log("⚠️ 워크스페이스(.root)를 찾지 못했습니다.")
+            self.right_panel.log("⚠️ 워크스페이스(.csvdesigndb)를 찾지 못했습니다.")
             self.lbl_workspace.config(text="⚠️ 워크스페이스 미설정 (기능 제한)")
 
     def _restart_watcher_if_needed(self):
@@ -71,6 +154,11 @@ class AppGUI(tk.Tk):
         if w_root:
             self.workspace_root = w_root
             self.workspace_file = w_file
+            
+            self._is_loading_config = True
+            self.load_workspace_config()
+            self._is_loading_config = False
+            
             self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
             self.right_panel.log(f"🔄 워크스페이스 변경됨: {self.workspace_file}")
             self.change_dir_force(w_root)
@@ -82,6 +170,11 @@ class AppGUI(tk.Tk):
                 if w_root:
                     self.workspace_root = w_root
                     self.workspace_file = w_file
+                    
+                    self._is_loading_config = True
+                    self.load_workspace_config()
+                    self._is_loading_config = False
+                    
                     self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
                     self.right_panel.log(f"✅ 새 워크스페이스 생성됨: {self.workspace_file}")
                     self.change_dir_force(w_root)
@@ -231,6 +324,11 @@ class AppGUI(tk.Tk):
                 if ans:
                     self.workspace_root = w_root
                     self.workspace_file = w_file
+                    
+                    self._is_loading_config = True
+                    self.load_workspace_config()
+                    self._is_loading_config = False
+                    
                     self.lbl_workspace.config(text=f"📂 워크스페이스: {self.workspace_root}")
                     self.right_panel.log(f"🔄 워크스페이스 변경됨: {self.workspace_file}")
                     self.change_dir_force(new_dir)
