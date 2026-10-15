@@ -1,1 +1,0 @@
-pyinstaller -w -n "CSV_DesignDB_Toolkit_Setup_vx.x.x" main.py
