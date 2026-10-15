@@ -1,0 +1,11 @@
+{
+    "projectName": "ERD생성검사",
+    "toolkitVersion": "1.1.0",
+    "settings": {
+        "maxSuperkeyLength": 2,
+        "includeSubDirectories": true,
+        "excludePrefix": "Disabled"
+    },
+    "created_at": "2026-10-15 11:14:31",
+    "erdHtmlPath": "ERD생성검사_ERD.html"
+}

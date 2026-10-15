@@ -1,0 +1,66 @@
+{
+  "superKeys": [
+    [
+      "cropId"
+    ],
+    [
+      "cropName"
+    ],
+    [
+      "growthDays"
+    ],
+    [
+      "cropId",
+      "cropName"
+    ],
+    [
+      "cropId",
+      "seedItemId"
+    ],
+    [
+      "cropId",
+      "harvestItemId"
+    ],
+    [
+      "cropId",
+      "growthDays"
+    ],
+    [
+      "cropName",
+      "seedItemId"
+    ],
+    [
+      "cropName",
+      "harvestItemId"
+    ],
+    [
+      "cropName",
+      "growthDays"
+    ],
+    [
+      "seedItemId",
+      "growthDays"
+    ],
+    [
+      "harvestItemId",
+      "growthDays"
+    ]
+  ],
+  "primaryKey": [
+    "cropId"
+  ],
+  "foreignKeys": {
+    "fk_seed": {
+      "columns": [
+        "seedItemId"
+      ],
+      "targetTable": "ItemTable.csv"
+    },
+    "fk_harvest": {
+      "columns": [
+        "harvestItemId"
+      ],
+      "targetTable": "ItemTable.csv"
+    }
+  }
+}

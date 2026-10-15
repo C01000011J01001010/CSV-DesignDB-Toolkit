@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>ERD생성검사 - CSV DesignDB ERD Viewer</title>
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background-color: #1E1E1E;
+        color: #D4D4D4;
+        font-family: 'Malgun Gothic', 'Segoe UI', Consolas, sans-serif;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+    .toolbar {
+        background-color: #252526;
+        border-bottom: 1px solid #3E3E42;
+        padding: 10px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        z-index: 10;
+    }
+    .brand {
+        font-size: 16px;
+        font-weight: bold;
+        color: #FFFFFF;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-right: 8px;
+    }
+    .brand span.proj {
+        color: #00FF66;
+        font-family: Consolas, monospace;
+    }
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #1E1E1E;
+        padding: 5px 12px;
+        border-radius: 4px;
+        border: 1px solid #3E3E42;
+    }
+    .control-group label {
+        font-size: 12px;
+        color: #CCCCCC;
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+    }
+    select, input[type="text"] {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+        border: 1px solid #555555;
+        padding: 5px 10px;
+        border-radius: 3px;
+        font-family: 'Malgun Gothic', Consolas, sans-serif;
+        font-size: 12px;
+        outline: none;
+    }
+    select:focus, input[type="text"]:focus {
+        border-color: #007ACC;
+    }
+    button.btn {
+        background-color: #007ACC;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    button.btn:hover { background-color: #0098FF; }
+    button.btn-secondary { background-color: #444444; }
+    button.btn-secondary:hover { background-color: #5A5A5A; }
+
+    .main-wrap {
+        flex: 1;
+        display: flex;
+        position: relative;
+        overflow: hidden;
+    }
+    #network-container {
+        flex: 1;
+        height: 100%;
+        background-color: #1E1E1E;
+        background-image: radial-gradient(#2D2D2D 1px, transparent 1px);
+        background-size: 24px 24px;
+    }
+
+    .sidebar {
+        width: 390px;
+        background-color: #252526;
+        border-left: 1px solid #3E3E42;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 16px;
+    }
+    .sidebar h3 {
+        font-size: 15px;
+        color: #FFD700;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+    .meta-badge {
+        font-size: 12px;
+        color: #AAAAAA;
+        margin-bottom: 14px;
+        font-family: Consolas, monospace;
+        line-height: 1.5;
+    }
+    .section-title {
+        font-size: 13px;
+        font-weight: bold;
+        color: #00FF66;
+        margin: 14px 0 8px 0;
+        border-bottom: 1px solid #3E3E42;
+        padding-bottom: 4px;
+    }
+    .col-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        font-family: Consolas, 'Malgun Gothic', monospace;
+    }
+    .col-table th, .col-table td {
+        border: 1px solid #3E3E42;
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+    }
+    .col-table th {
+        background-color: #2D2D2D;
+        color: #CCCCCC;
+    }
+    .badge-pk { color: #FFD700; font-weight: bold; }
+    .badge-fk { color: #00FF66; font-weight: bold; }
+    .badge-type { color: #569CD6; }
+    .badge-const { color: #CE9178; font-size: 11px; display: block; margin-top: 2px; }
+    .err-box {
+        background-color: rgba(220, 53, 69, 0.15);
+        border: 1px solid #DC3545;
+        color: #FF7B88;
+        padding: 8px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-bottom: 6px;
+        line-height: 1.4;
+    }
+    .ok-box {
+        background-color: rgba(40, 167, 69, 0.15);
+        border: 1px solid #28A745;
+        color: #5CD679;
+        padding: 8px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    .status-bar {
+        background-color: #2D2D2D;
+        border-top: 1px solid #3E3E42;
+        padding: 6px 20px;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #BBBBBB;
+    }
+    .legend {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .dot { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div class="brand">
+        📊 ERD 참조 관계도 <span class="proj">[ERD생성검사]</span>
+    </div>
+
+    <div class="control-group">
+        <label for="levelSelect">표시 단계:</label>
+        <select id="levelSelect" onchange="updateGraphLevel()">
+            <option value="1">Level 1: 테이블명만 표시 (구조 조망)</option>
+            <option value="2">Level 2: Key 컬럼명만 (PK / FK)</option>
+            <option value="3" selected>Level 3: Key 컬럼 + 데이터 타입 (기본)</option>
+            <option value="4">Level 4: 전체 컬럼 + 데이터 타입</option>
+            <option value="5">Level 5: 전체 스키마 상세 (제약조건 포함)</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label for="searchInput">🔍 검색:</label>
+        <input type="text" id="searchInput" list="tableList" placeholder="테이블명 입력..." oninput="onSearchTable()">
+        <datalist id="tableList"></datalist>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="chkEdgeLabel" checked onchange="updateGraphLevel()">
+        <label for="chkEdgeLabel">화살표(FK) 라벨 표시</label>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="chkHideIsolated" onchange="updateGraphLevel()">
+        <label for="chkHideIsolated">고립 테이블 숨기기</label>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="chkPhysics" checked onchange="togglePhysics()">
+        <label for="chkPhysics">물리 엔진(자동 배치)</label>
+    </div>
+
+    <button class="btn btn-secondary" onclick="fitNetwork()">🔄 화면 맞춤</button>
+</div>
+
+<div class="main-wrap">
+    <div id="network-container"></div>
+    <div class="sidebar" id="sidebar">
+        <h3>📌 테이블 상세 정보</h3>
+        <div class="meta-badge">그래프에서 테이블 노드를 클릭하면 상세 스키마와 무결성 검증 결과를 확인할 수 있습니다.</div>
+        <div id="sidebar-content"></div>
+    </div>
+</div>
+
+<div class="status-bar">
+    <div class="legend">
+        <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상 테이블</div>
+        <div class="legend-item"><span class="dot" style="background:#DC3545;"></span> 무결성 위반 / 유령 타겟</div>
+        <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑 PK</span> 기본키</div>
+        <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗 FK</span> 외래키</div>
+        <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">━━▶</span> 정상 참조(FK)</div>
+        <div class="legend-item"><span style="color:#FF4444;font-weight:bold;">┅┅▶</span> 깨진 참조(위반)</div>
+    </div>
+    <div id="stats-info">생성 시각: 2026-10-15 11:24:13</div>
+</div>
+
+<script>
+const rawData = {"project_name": "ERD생성검사", "workspace_root": "C:\\GitHub Release\\CSV-DesignDB-Toolkit\\_WorkSpace\\_TestSource\\ERD 검사", "generated_at": "2026-10-15 11:24:13", "nodes": [{"id": "CropTable.csv", "label": "CropTable.csv", "rel_path": "CropTable.csv", "row_count": 4, "columns": [{"name": "cropId", "type": "int", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": true, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "cropName", "type": "string", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "seedItemId", "type": "int", "constraints": ["NOT NULL"], "is_pk": false, "is_fk": true, "fk_Targets": ["fk_seed ➔ ItemTable.csv"], "is_schema": true}, {"name": "harvestItemId", "type": "int", "constraints": ["NOT NULL"], "is_pk": false, "is_fk": true, "fk_Targets": ["fk_harvest ➔ ItemTable.csv"], "is_schema": true}, {"name": "growthDays", "type": "int", "constraints": ["NOT NULL", "CHECK(VALUE > 0)"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}], "errors": [], "has_error": false, "is_isolated": false, "is_missing_target": false}, {"id": "EggHatchTable.csv", "label": "EggHatchTable.csv", "rel_path": "EggHatchTable.csv", "row_count": 4, "columns": [{"name": "eggId", "type": "int", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": true, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "eggName", "type": "string", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "feedItemId", "type": "int", "constraints": ["NOT NULL"], "is_pk": false, "is_fk": true, "fk_Targets": ["fk_feed ➔ ItemTable.csv"], "is_schema": true}, {"name": "favCropId", "type": "int", "constraints": ["NOT NULL"], "is_pk": false, "is_fk": true, "fk_Targets": ["fk_fav_crop ➔ CropTable.csv"], "is_schema": true}, {"name": "hatchHours", "type": "int", "constraints": ["NOT NULL", "CHECK(VALUE >= 1)"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}], "errors": [], "has_error": false, "is_isolated": false, "is_missing_target": false}, {"id": "ItemTable.csv", "label": "ItemTable.csv", "rel_path": "ItemTable.csv", "row_count": 5, "columns": [{"name": "itemId", "type": "int", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": true, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "itemName", "type": "string", "constraints": ["NOT NULL", "UNIQUE"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "itemType", "type": "enum", "constraints": ["NOT NULL", "CHECK IN(Seed|Crop|Feed)"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}, {"name": "sellPrice", "type": "int", "constraints": ["NOT NULL", "CHECK(VALUE >= 0)"], "is_pk": false, "is_fk": false, "fk_Targets": [], "is_schema": true}], "errors": [], "has_error": false, "is_isolated": false, "is_missing_target": false}], "edges": [{"id": "edge_0", "from": "CropTable.csv", "to": "ItemTable.csv", "fk_name": "fk_seed", "local_cols": ["seedItemId"], "target_cols": ["itemId"], "is_valid": true, "error_msg": ""}, {"id": "edge_1", "from": "CropTable.csv", "to": "ItemTable.csv", "fk_name": "fk_harvest", "local_cols": ["harvestItemId"], "target_cols": ["itemId"], "is_valid": true, "error_msg": ""}, {"id": "edge_2", "from": "EggHatchTable.csv", "to": "ItemTable.csv", "fk_name": "fk_feed", "local_cols": ["feedItemId"], "target_cols": ["itemId"], "is_valid": true, "error_msg": ""}, {"id": "edge_3", "from": "EggHatchTable.csv", "to": "CropTable.csv", "fk_name": "fk_fav_crop", "local_cols": ["favCropId"], "target_cols": ["cropId"], "is_valid": true, "error_msg": ""}]};
+
+let network = null;
+let nodesDataset = null;
+let edgesDataset = null;
+
+function escapeXml(unsafe) {
+    return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+}
+
+function buildTooltipText(node) {
+    const lines = [];
+    lines.push(`[${node.label}] (${node.rel_path})`);
+    lines.push(`데이터 행 수: ${node.row_count}행`);
+    if (node.columns && node.columns.length > 0) {
+        lines.push("-------------------------");
+        for (const c of node.columns) {
+            const prefix = c.is_pk ? "🔑PK " : (c.is_fk ? "🔗FK " : "• ");
+            const constStr = (c.constraints && c.constraints.length > 0) ? ` [${c.constraints.join(", ")}]` : "";
+            lines.push(`${prefix}${c.name} (${c.type})${constStr}`);
+        }
+    }
+    return lines.join("\n");
+}
+
+function buildNodeSvg(node, level) {
+    const rows = [];
+    const cols = node.columns || [];
+
+    if (node.is_missing_target) {
+        rows.push({ icon: "⚠️", name: "파일이 존재하지 않음", type: "", consts: "" });
+    } else if (level >= 2) {
+        for (const c of cols) {
+            const isKey = c.is_pk || c.is_fk;
+            if (level <= 3 && !isKey) continue;
+
+            let icon = "📄";
+            if (c.is_pk && c.is_fk) icon = "🔑🔗";
+            else if (c.is_pk) icon = "🔑";
+            else if (c.is_fk) icon = "🔗";
+
+            const typeStr = (level >= 3) ? `(${c.type})` : "";
+            const constStr = (level === 5 && c.constraints && c.constraints.length > 0)
+                ? `[${c.constraints.join(", ")}]` : "";
+
+            rows.push({
+                icon: icon,
+                name: c.name,
+                type: typeStr,
+                consts: constStr,
+                is_pk: c.is_pk,
+                is_fk: c.is_fk
+            });
+        }
+        if (rows.length === 0) {
+            rows.push({ icon: "ℹ️", name: "(표시할 Key 컬럼 없음)", type: "", consts: "", is_empty: true });
+        }
+    }
+
+    const titleText = (node.has_error ? "❌ " : "📁 ") + node.label;
+    let maxChars = titleText.length * 1.15;
+    for (const r of rows) {
+        const lineLen = (r.icon + " " + r.name + " " + r.type + " " + r.consts).length;
+        if (lineLen > maxChars) maxChars = lineLen;
+    }
+
+    const width = Math.max(220, Math.min(640, Math.ceil(maxChars * 8.2) + 36));
+    const headerHeight = 36;
+    const rowHeight = 24;
+    const bodyHeight = rows.length > 0 ? (rows.length * rowHeight + 12) : 6;
+    const height = headerHeight + bodyHeight;
+
+    const headerBg = node.is_missing_target ? "#8B0000" : (node.has_error ? "#C9302C" : "#007ACC");
+    const borderCol = node.has_error ? "#FF4444" : "#3E3E42";
+    const borderWidth = node.has_error ? 2.5 : 1.5;
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
+    svg += `<rect x="1" y="1" width="${width-2}" height="${height-2}" rx="6" ry="6" fill="#252526" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
+    svg += `<path d="M 1 7 Q 1 1 7 1 L ${width-7} 1 Q ${width-1} 1 ${width-1} 7 L ${width-1} ${headerHeight} L 1 ${headerHeight} Z" fill="${headerBg}"/>`;
+    svg += `<text x="12" y="23" fill="#FFFFFF" font-family="Consolas, Malgun Gothic, sans-serif" font-size="13.5" font-weight="bold">${escapeXml(titleText)}</text>`;
+
+    let y = headerHeight + 20;
+    for (const r of rows) {
+        let nameColor = "#D4D4D4";
+        if (r.is_pk) nameColor = "#FFD700";
+        else if (r.is_fk) nameColor = "#00FF66";
+        else if (r.is_empty) nameColor = "#888888";
+
+        svg += `<text x="12" y="${y}" font-family="Consolas, Malgun Gothic, sans-serif" font-size="12">`;
+        svg += `<tspan fill="${nameColor}" font-weight="${(r.is_pk || r.is_fk) ? "bold" : "normal"}">${escapeXml(r.icon)} ${escapeXml(r.name)}</tspan>`;
+        if (r.type) {
+            svg += ` <tspan fill="#569CD6">${escapeXml(r.type)}</tspan>`;
+        }
+        if (r.consts) {
+            svg += ` <tspan fill="#CE9178" font-size="11">${escapeXml(r.consts)}</tspan>`;
+        }
+        svg += `</text>`;
+        y += rowHeight;
+    }
+
+    svg += `</svg>`;
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
+function initGraph() {
+    if (typeof vis === "undefined") {
+        document.getElementById("network-container").innerHTML =
+            '<div style="padding:40px;color:#FF7B88;font-size:15px;">⚠️ 그래프 엔진(vis-network)을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.</div>';
+        return;
+    }
+
+    nodesDataset = new vis.DataSet();
+    edgesDataset = new vis.DataSet();
+
+    const datalist = document.getElementById("tableList");
+    rawData.nodes.forEach(n => {
+        const opt = document.createElement("option");
+        opt.value = n.id;
+        datalist.appendChild(opt);
+    });
+
+    const container = document.getElementById("network-container");
+    const data = { nodes: nodesDataset, edges: edgesDataset };
+    const options = {
+        nodes: {
+            shape: "image",
+            shapeProperties: { useImageSize: true },
+            chosen: true
+        },
+        edges: {
+            arrows: { to: { enabled: true, scaleFactor: 1.0 } },
+            font: {
+                color: "#E0E0E0",
+                size: 11,
+                face: "Consolas, Malgun Gothic, sans-serif",
+                background: "#1E1E1E",
+                strokeWidth: 0
+            },
+            smooth: { enabled: true, type: "dynamic" }
+        },
+        physics: {
+            enabled: true,
+            solver: "forceAtlas2Based",
+            forceAtlas2Based: {
+                gravitationalConstant: -160,
+                centralGravity: 0.008,
+                springLength: 240,
+                springConstant: 0.06,
+                avoidOverlap: 0.95
+            },
+            stabilization: { iterations: 150 }
+        },
+        interaction: {
+            hover: true,
+            navigationButtons: true,
+            keyboard: true
+        }
+    };
+
+    network = new vis.Network(container, data, options);
+    updateGraphLevel();
+
+    network.on("click", function (params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            renderSidebar(nodeId);
+        }
+    });
+
+    updateSummaryStats();
+}
+
+function updateSummaryStats() {
+    const totalTables = rawData.nodes.filter(n => !n.is_missing_target).length;
+    const totalFks = rawData.edges.length;
+    const brokenFks = rawData.edges.filter(e => !e.is_valid).length;
+    document.getElementById("stats-info").innerText =
+        `테이블: ${totalTables}개 | 참조(FK) 연결: ${totalFks}개 (깨진 참조: ${brokenFks}건) | 생성: ${rawData.generated_at}`;
+}
+
+function updateGraphLevel() {
+    if (!nodesDataset || !edgesDataset) return;
+    const level = parseInt(document.getElementById("levelSelect").value, 10);
+    const showEdgeLabel = document.getElementById("chkEdgeLabel").checked;
+    const hideIsolated = document.getElementById("chkHideIsolated").checked;
+
+    const updatedNodes = [];
+    for (const n of rawData.nodes) {
+        if (hideIsolated && n.is_isolated) continue;
+        updatedNodes.push({
+            id: n.id,
+            image: buildNodeSvg(n, level),
+            title: buildTooltipText(n)
+        });
+    }
+
+    const currentIds = new Set(updatedNodes.map(n => n.id));
+    const existingIds = nodesDataset.getIds();
+    const toRemove = existingIds.filter(id => !currentIds.has(id));
+    if (toRemove.length > 0) nodesDataset.remove(toRemove);
+    nodesDataset.update(updatedNodes);
+
+    // 동일 테이블 간 다중 FK 화살표가 겹치지 않도록 곡률 자동 분산
+    const pairCounts = {};
+    const pairIndex = {};
+    for (const e of rawData.edges) {
+        if (!currentIds.has(e.from) || !currentIds.has(e.to)) continue;
+        const key = [e.from, e.to].sort().join("::");
+        pairCounts[key] = (pairCounts[key] || 0) + 1;
+    }
+
+    const updatedEdges = [];
+    for (const e of rawData.edges) {
+        if (!currentIds.has(e.from) || !currentIds.has(e.to)) continue;
+        const mapStr = `${e.local_cols.join(", ")} ➔ ${e.target_cols.length ? e.target_cols.join(", ") : "?"}`;
+        let labelStr = "";
+        if (showEdgeLabel) {
+            labelStr = e.is_valid
+                ? `[${e.fk_name}]\n${mapStr}`
+                : `❌ [${e.fk_name}] ${e.error_msg}\n(${mapStr})`;
+        }
+
+        const key = [e.from, e.to].sort().join("::");
+        const totalInPair = pairCounts[key] || 1;
+        const idxInPair = pairIndex[key] || 0;
+        pairIndex[key] = idxInPair + 1;
+
+        let smoothOpt = { enabled: true, type: "cubicBezier", forceDirection: "none", roundness: 0.25 };
+        if (totalInPair > 1) {
+            const dirType = (idxInPair % 2 === 0) ? "curvedCW" : "curvedCCW";
+            const roundVal = 0.18 + Math.floor(idxInPair / 2) * 0.15;
+            smoothOpt = { enabled: true, type: dirType, roundness: roundVal };
+        }
+
+        updatedEdges.push({
+            id: e.id,
+            from: e.from,
+            to: e.to,
+            label: labelStr,
+            smooth: smoothOpt,
+            color: {
+                color: e.is_valid ? "#00E5FF" : "#FF4444",
+                highlight: e.is_valid ? "#FFD700" : "#FF7777",
+                hover: e.is_valid ? "#66F0FF" : "#FF7777"
+            },
+            dashes: !e.is_valid,
+            width: e.is_valid ? 2.2 : 3.2
+        });
+    }
+    edgesDataset.clear();
+    edgesDataset.add(updatedEdges);
+}
+
+function renderSidebar(nodeId) {
+    const node = rawData.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const container = document.getElementById("sidebar-content");
+    let html = `<div class="section-title">📂 파일 정보</div>`;
+    html += `<div class="meta-badge">테이블: <b style="color:#FFF;">${escapeXml(node.label)}</b><br>상대 경로: ${escapeXml(node.rel_path)}<br>데이터 행 수: ${node.row_count}행</div>`;
+
+    html += `<div class="section-title">🛡️ 무결성 검증 상태</div>`;
+    if (node.errors && node.errors.length > 0) {
+        for (const err of node.errors) {
+            html += `<div class="err-box">❌ ${escapeXml(err)}</div>`;
+        }
+    } else {
+        html += `<div class="ok-box">✅ 무결성 위반 사항이 없습니다.</div>`;
+    }
+
+    html += `<div class="section-title">📋 전체 컬럼 스키마 (${node.columns.length}개)</div>`;
+    if (node.columns.length > 0) {
+        html += `<table class="col-table"><thead><tr><th>구분</th><th>컬럼명</th><th>타입 / 제약조건</th></tr></thead><tbody>`;
+        for (const c of node.columns) {
+            let keyBadge = "";
+            if (c.is_pk) keyBadge += `<span class="badge-pk">🔑PK</span> `;
+            if (c.is_fk) keyBadge += `<span class="badge-fk">🔗FK</span>`;
+            if (!keyBadge) keyBadge = `<span style="color:#777;">일반</span>`;
+
+            let constHtml = "";
+            if (c.constraints && c.constraints.length > 0) {
+                constHtml += `<span class="badge-const">${escapeXml(c.constraints.join(" / "))}</span>`;
+            }
+            if (c.fk_Targets && c.fk_Targets.length > 0) {
+                constHtml += `<span class="badge-const" style="color:#00FF66;">참조: ${escapeXml(c.fk_Targets.join(", "))}</span>`;
+            }
+
+            html += `<tr>
+                <td>${keyBadge}</td>
+                <td style="font-weight:bold;color:#FFF;">${escapeXml(c.name)}</td>
+                <td><span class="badge-type">${escapeXml(c.type)}</span>${constHtml}</td>
+            </tr>`;
+        }
+        html += `</tbody></table>`;
+    } else {
+        html += `<div class="meta-badge">컬럼 정보가 없습니다.</div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function onSearchTable() {
+    const val = document.getElementById("searchInput").value.trim();
+    if (!val) return;
+    const found = rawData.nodes.find(n => n.id.toLowerCase() === val.toLowerCase());
+    if (found && nodesDataset.get(found.id)) {
+        network.selectNodes([found.id]);
+        network.focus(found.id, { scale: 1.15, animation: { duration: 400, easingFunction: "easeInOutQuad" } });
+        renderSidebar(found.id);
+    }
+}
+
+function togglePhysics() {
+    const enabled = document.getElementById("chkPhysics").checked;
+    network.setOptions({ physics: { enabled: enabled } });
+}
+
+function fitNetwork() {
+    network.fit({ animation: { duration: 400, easingFunction: "easeInOutQuad" } });
+}
+
+window.addEventListener("DOMContentLoaded", initGraph);
+</script>
+</body>
+</html>

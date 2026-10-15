@@ -1,0 +1,5 @@
+{cropId/int/NOT NULL/UNIQUE},{cropName/string/NOT NULL/UNIQUE},{seedItemId/int/NOT NULL},{harvestItemId/int/NOT NULL},{growthDays/int/NOT NULL/CHECK(VALUE > 0)}
+1,봄 당근,101,201,3
+2,고당도 당근,101,201,5
+3,설향 딸기,102,202,7
+4,금실 딸기,102,202,10

@@ -1,0 +1,5 @@
+{eggId/int/NOT NULL/UNIQUE},{eggName/string/NOT NULL/UNIQUE},{feedItemId/int/NOT NULL},{favCropId/int/NOT NULL},{hatchHours/int/NOT NULL/CHECK(VALUE >= 1)}
+10,풀잎 알,301,1,12
+20,노란 별 알,301,2,24
+30,분홍 구름 알,201,3,36
+40,황금 빛 알,202,4,48

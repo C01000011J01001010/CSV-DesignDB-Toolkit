@@ -1,0 +1,6 @@
+{itemId/int/NOT NULL/UNIQUE},{itemName/string/NOT NULL/UNIQUE},{itemType/enum/NOT NULL/CHECK IN(Seed|Crop|Feed)},{sellPrice/int/NOT NULL/CHECK(VALUE >= 0)}
+101,당근 씨앗,Seed,50
+102,딸기 씨앗,Seed,100
+201,신선한 당근,Crop,150
+202,달콤한 딸기,Crop,300
+301,영양 건초,Feed,80

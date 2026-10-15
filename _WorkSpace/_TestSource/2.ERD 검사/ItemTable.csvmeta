@@ -1,0 +1,41 @@
+{
+  "superKeys": [
+    [
+      "itemId"
+    ],
+    [
+      "itemName"
+    ],
+    [
+      "sellPrice"
+    ],
+    [
+      "itemId",
+      "itemName"
+    ],
+    [
+      "itemId",
+      "itemType"
+    ],
+    [
+      "itemId",
+      "sellPrice"
+    ],
+    [
+      "itemName",
+      "itemType"
+    ],
+    [
+      "itemName",
+      "sellPrice"
+    ],
+    [
+      "itemType",
+      "sellPrice"
+    ]
+  ],
+  "primaryKey": [
+    "itemId"
+  ],
+  "foreignKeys": {}
+}

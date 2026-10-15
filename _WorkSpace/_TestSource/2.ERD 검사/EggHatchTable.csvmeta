@@ -1,0 +1,73 @@
+{
+  "superKeys": [
+    [
+      "eggId"
+    ],
+    [
+      "eggName"
+    ],
+    [
+      "favCropId"
+    ],
+    [
+      "hatchHours"
+    ],
+    [
+      "eggId",
+      "eggName"
+    ],
+    [
+      "eggId",
+      "feedItemId"
+    ],
+    [
+      "eggId",
+      "favCropId"
+    ],
+    [
+      "eggId",
+      "hatchHours"
+    ],
+    [
+      "eggName",
+      "feedItemId"
+    ],
+    [
+      "eggName",
+      "favCropId"
+    ],
+    [
+      "eggName",
+      "hatchHours"
+    ],
+    [
+      "feedItemId",
+      "favCropId"
+    ],
+    [
+      "feedItemId",
+      "hatchHours"
+    ],
+    [
+      "favCropId",
+      "hatchHours"
+    ]
+  ],
+  "primaryKey": [
+    "eggId"
+  ],
+  "foreignKeys": {
+    "fk_feed": {
+      "columns": [
+        "feedItemId"
+      ],
+      "targetTable": "ItemTable.csv"
+    },
+    "fk_fav_crop": {
+      "columns": [
+        "favCropId"
+      ],
+      "targetTable": "CropTable.csv"
+    }
+  }
+}
