@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import re
 import os
 import json
@@ -7,9 +7,7 @@ import csv
 
 def parse_raw_header(header_str):
     name = str(header_str).strip()
-    # 💡 [치명적 버그 수정] UTF-8 파일 맨 앞에 숨어있는 BOM(\ufeff) 문자를 완벽 제거
     name = name.lstrip('\ufeff') 
-    
     if name.startswith('"') and name.endswith('"'):
         name = name[1:-1].strip()
         
@@ -244,6 +242,7 @@ class ForeignKeyBuilder(tk.Frame):
         self.mapped_cols = columns if columns else []
         self.target_pk_info = []
         self.local_col_combos = []
+        self.file_map = {}
         
         r1 = tk.Frame(self, bg="#252526")
         r1.pack(fill="x", padx=10, pady=10)
@@ -253,7 +252,7 @@ class ForeignKeyBuilder(tk.Frame):
         self.ent_name.insert(0, fk_name)
         self.ent_name.pack(side="left", padx=5)
         
-        tk.Label(r1, text="타겟 테이블 (Workspace 內):", bg="#252526", fg="#CCCCCC", font=("맑은 고딕", 9)).pack(side="left", padx=(15, 5))
+        tk.Label(r1, text="타겟 테이블 (Workspace 전역):", bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(15, 5))
         self.cb_target = ttk.Combobox(r1, state="readonly", width=30, font=("Consolas", 10))
         self.cb_target.pack(side="left")
         
@@ -270,35 +269,57 @@ class ForeignKeyBuilder(tk.Frame):
         self.cb_target.bind('<Button-1>', self._refresh_target_list)
         self.cb_target.bind('<<ComboboxSelected>>', self._on_target_selected)
         
+        # UI 생성 시 (event=None) 에러 알림 없이 조용히 스캔 시도
         self._refresh_target_list(None)
+        
         if target_table:
-            self.cb_target.set(target_table)
-            self._load_target_mapping(target_table, self.mapped_cols)
+            target_basename = os.path.basename(target_table)
+            self.cb_target.set(target_basename)
+            self._load_target_mapping(target_basename, self.mapped_cols)
             
+    # 💡 [3차 방어선] 외래키 타겟 드롭다운 클릭 시 차단
     def _refresh_target_list(self, event):
         if not self.app.workspace_root: return
-        csv_files = []
+        
+        # 1. 중복 검사 (전제 조건 확인)
+        err = self.app.check_duplicate_tables()
+        if err:
+            # 콤보박스를 클릭했을 때(event != None)만 에러 팝업을 띄움 (초기 로딩 시 도배 방지)
+            if event is not None:
+                messagebox.showerror("중복 테이블명 감지", "외래키 타겟을 조회할 수 없습니다.\n\n" + err)
+            self.cb_target['values'] = []
+            self.file_map.clear()
+            return
+            
+        self.file_map.clear()
         prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
-        for root, dirs, files in os.walk(self.app.target_dir):
-            if any(p.startswith(prefix) for p in root.replace('\\', '/').split('/')): continue
+        
+        for root, dirs, files in os.walk(self.app.workspace_root):
+            rel_root = os.path.relpath(root, self.app.workspace_root)
+            if rel_root != '.' and any(p.startswith(prefix) for p in rel_root.replace('\\', '/').split('/')): continue
+            
             for file in files:
-                if file.startswith(prefix): continue
+                if file.startswith(prefix) or file.startswith('~$'): continue
                 if file.endswith('.csv'):
-                    rel_path = os.path.relpath(os.path.join(root, file), self.app.target_dir).replace('\\', '/')
-                    csv_files.append(rel_path)
-        self.cb_target['values'] = csv_files
+                    self.file_map[file] = os.path.join(root, file)
+                    
+        self.cb_target['values'] = list(self.file_map.keys())
 
     def _on_target_selected(self, event):
-        target_file = self.cb_target.get()
-        self._load_target_mapping(target_file, [])
+        target_basename = self.cb_target.get()
+        self._load_target_mapping(target_basename, [])
         
-    def _load_target_mapping(self, target_file, pre_mapped_cols):
+    def _load_target_mapping(self, target_basename, pre_mapped_cols):
         for w in self.mapping_frame.winfo_children(): w.destroy()
         self.local_col_combos.clear()
         
-        if not target_file: return
+        if not target_basename: return
         
-        target_csv_path = os.path.join(self.app.target_dir, target_file)
+        target_csv_path = self.file_map.get(target_basename)
+        if not target_csv_path:
+            tk.Label(self.mapping_frame, text=f"⚠️ 워크스페이스 내에 '{target_basename}' 파일이 존재하지 않습니다.", bg="#252526", fg="#FF5555", font=("맑은 고딕", 9)).pack(anchor="w", pady=2)
+            return
+            
         target_meta_path = os.path.splitext(target_csv_path)[0] + ".csvmeta"
         
         target_pks = []
@@ -316,7 +337,6 @@ class ForeignKeyBuilder(tk.Frame):
         pk_types = {}
         if os.path.exists(target_csv_path):
             try:
-                # 💡 [치명적 버그 수정] csv 모듈과 utf-8-sig를 사용하여 CSV 구조와 BOM을 완벽히 파싱
                 with open(target_csv_path, 'r', encoding='utf-8-sig') as f:
                     reader = csv.reader(f)
                     headers = next(reader)
@@ -329,7 +349,6 @@ class ForeignKeyBuilder(tk.Frame):
         current_csv_path = os.path.join(self.app.target_dir, self.current_file)
         if os.path.exists(current_csv_path):
             try:
-                # 💡 [치명적 버그 수정] csv 모듈과 utf-8-sig를 사용하여 CSV 구조와 BOM을 완벽히 파싱
                 with open(current_csv_path, 'r', encoding='utf-8-sig') as f:
                     reader = csv.reader(f)
                     headers = next(reader)
@@ -340,7 +359,6 @@ class ForeignKeyBuilder(tk.Frame):
             
         for i, pk_col in enumerate(target_pks):
             ptype = pk_types.get(pk_col, "string")
-            
             matched_local_cols = [c for c, t in local_col_types.items() if t == ptype]
             
             row = tk.Frame(self.mapping_frame, bg="#252526")
@@ -360,7 +378,7 @@ class ForeignKeyBuilder(tk.Frame):
             
     def get_data(self):
         name = self.ent_name.get().strip()
-        target = self.cb_target.get().strip()
+        target = self.cb_target.get().strip() 
         if not name or not target: return None
         
         cols = []

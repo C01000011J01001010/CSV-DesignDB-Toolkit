@@ -409,8 +409,49 @@ class AppGUI(tk.Tk):
                 return
         self.change_dir_force(new_dir)
 
+    # 💡 [FIX] 워크스페이스 전역 테이블명(파일명) 중복 검사: 확장자까지 완벽 일치할 때만 중복으로 처리
+    def check_duplicate_tables(self):
+        if not self.workspace_root: return None
+        prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+        file_dict = {}
+        duplicates = {}
+
+        for root, dirs, files in os.walk(self.workspace_root):
+            rel_root = os.path.relpath(root, self.workspace_root)
+            if rel_root != '.' and any(p.startswith(prefix) for p in rel_root.replace('\\', '/').split('/')):
+                continue
+            for file in files:
+                if file.startswith(prefix) or file.startswith('~$'): continue
+                if file.endswith('.csv') or file.endswith('.xlsx'):
+                    # 💡 원본 확장자(예: Crops.csv, Crops.xlsx)를 그대로 보존하여 식별자로 사용!
+                    file_name = file
+                    rel_path = os.path.relpath(os.path.join(root, file), self.workspace_root).replace('\\', '/')
+                    
+                    if file_name in file_dict:
+                        if file_name not in duplicates:
+                            duplicates[file_name] = [file_dict[file_name]]
+                        duplicates[file_name].append(rel_path)
+                    else:
+                        file_dict[file_name] = rel_path
+        
+        if duplicates:
+            err_msg = "❌ 워크스페이스 내에 중복된 테이블명(파일명)이 존재합니다.\n(데이터베이스 설계 원칙상 테이블 이름은 전역적으로 고유해야 합니다)\n\n"
+            for name, paths in duplicates.items():
+                err_msg += f"[{name}]\n"
+                for p in paths: err_msg += f" - {p}\n"
+                err_msg += "\n"
+            err_msg += "이름을 고유하게 변경하거나 불필요한 파일을 삭제 후 다시 시도해주세요."
+            return err_msg
+        return None
+
     def run_xlsx_to_csv_all(self):
         if not self.workspace_root: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+            
         def task():
             self.set_buttons_state(False)
             self.right_panel.log("\n🚀 [작업 시작] 엑셀 ➔ CSV 변환")
@@ -432,6 +473,12 @@ class AppGUI(tk.Tk):
 
     def run_ansi_to_utf8_all(self):
         if not self.workspace_root: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+            
         def task():
             self.set_buttons_state(False)
             self.right_panel.log("\n🚀 [작업 시작] CSV 인코딩(UTF-8) 변환")
@@ -454,6 +501,11 @@ class AppGUI(tk.Tk):
     def toggle_watch_mode(self):
         if not self.workspace_root: return
         if not self.watcher.is_watching:
+            err = self.check_duplicate_tables()
+            if err:
+                self.right_panel.log(err)
+                messagebox.showerror("중복 테이블명 감지", "자동 변환 감시기를 켜기 전에 중복된 테이블명을 해결해주세요.\n\n" + err)
+                return
             self.watcher.start(self.workspace_root, True)
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
             self.right_panel.log(f"\n🕵️‍♂️ [자동 변환 감시 시작]")
@@ -464,6 +516,12 @@ class AppGUI(tk.Tk):
 
     def run_super_key_finder(self):
         if not self.workspace_root: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+            
         def task():
             self.set_buttons_state(False)
             self.set_progress(0)
@@ -475,6 +533,12 @@ class AppGUI(tk.Tk):
 
     def run_global_validation(self):
         if not self.workspace_root: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+            
         def task():
             self.set_buttons_state(False)
             self.set_progress(0)
