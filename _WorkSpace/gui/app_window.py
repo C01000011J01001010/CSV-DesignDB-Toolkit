@@ -1,6 +1,8 @@
 import os
 import json
 import threading
+import webbrowser
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -76,6 +78,7 @@ class AppGUI(tk.Tk):
         self.target_dir = get_initial_dir()
         self.workspace_root = None
         self.workspace_file = None
+        self.erd_html_rel_path = None
         self._is_loading_config = False
         
         self.include_subdirs = tk.BooleanVar(value=True)
@@ -99,9 +102,42 @@ class AppGUI(tk.Tk):
         set_exclude_prefix(val if val else "Disabled")
         self.save_workspace_config()
 
+    def _update_erd_button_state(self):
+        if not hasattr(self, 'btn_open_erd'): return
+        if self.workspace_root and self.erd_html_rel_path:
+            full_path = os.path.join(self.workspace_root, self.erd_html_rel_path)
+            if os.path.exists(full_path):
+                self.btn_open_erd.config(
+                    state=tk.NORMAL,
+                    bg="#007ACC",
+                    text=f"📊 참조 관계도(ERD) 브라우저로 열기 ({self.erd_html_rel_path})"
+                )
+                return
+        self.btn_open_erd.config(
+            state=tk.DISABLED,
+            bg="#444444",
+            text="📊 참조 관계도(ERD) 브라우저로 열기 (무결성 검증 시 자동 생성)"
+        )
+
+    def open_erd_viewer(self):
+        if not self.workspace_root or not self.erd_html_rel_path:
+            messagebox.showwarning("안내", "생성된 참조 관계도(ERD) 파일이 없습니다.\n먼저 [전체 무결성 검증]을 실행해주세요.")
+            return
+        full_path = os.path.join(self.workspace_root, self.erd_html_rel_path)
+        if not os.path.exists(full_path):
+            messagebox.showwarning("안내", f"참조 관계도 파일을 찾을 수 없습니다:\n{full_path}\n\n다시 무결성 검증을 실행하여 갱신해주세요.")
+            self._update_erd_button_state()
+            return
+        try:
+            webbrowser.open(Path(full_path).resolve().as_uri())
+            self.right_panel.log(f"🌐 브라우저에서 참조 관계도(ERD)를 열었습니다: {self.erd_html_rel_path}")
+        except Exception as e:
+            messagebox.showerror("오류", f"브라우저 실행 실패: {e}")
+
     def load_workspace_config(self):
         if not self.workspace_root or not self.workspace_file: return
         filepath = os.path.join(self.workspace_root, self.workspace_file)
+        self.erd_html_rel_path = None
 
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -112,8 +148,18 @@ class AppGUI(tk.Tk):
                 if "excludePrefix" in settings:
                     self.exclude_prefix_var.set(settings["excludePrefix"])
                     set_exclude_prefix(settings["excludePrefix"])
+                
+                erd_rel = data.get("erdHtmlPath", None)
+                if not erd_rel:
+                    proj_name = data.get("projectName", self.workspace_file.replace('.csvdesigndb', ''))
+                    candidate = f"{proj_name}_ERD.html"
+                    if os.path.exists(os.path.join(self.workspace_root, candidate)):
+                        erd_rel = candidate
+                self.erd_html_rel_path = erd_rel
         except Exception as e:
             self.right_panel.log(f"⚠️ 설정 로드 실패: {e}")
+        
+        self._update_erd_button_state()
 
     def save_workspace_config(self):
         if self._is_loading_config: return
@@ -123,6 +169,9 @@ class AppGUI(tk.Tk):
             with open(filepath, 'r', encoding='utf-8') as f: data = json.load(f)
         except:
             data = {"projectName": self.workspace_file.replace('.csvdesigndb', ''), "settings": {}}
+            
+        if self.erd_html_rel_path:
+            data["erdHtmlPath"] = self.erd_html_rel_path
             
         data["settings"] = {
             "maxSuperkeyLength": self.max_combo_var.get(),
@@ -149,6 +198,7 @@ class AppGUI(tk.Tk):
                 self.path_entry_var.set(self.target_dir)
         else:
             self.lbl_workspace.config(text="⚠️ 워크스페이스 미설정 (기능 제한)")
+            self._update_erd_button_state()
 
     def _restart_watcher_if_needed(self):
         if self.watcher.is_watching and self.workspace_root:
@@ -301,6 +351,11 @@ class AppGUI(tk.Tk):
         if hasattr(self.left_panel.app, 'btn2'): self.left_panel.app.btn2.config(state=flag)
         if hasattr(self.left_panel.app, 'btn4'): self.left_panel.app.btn4.config(state=flag)
         if hasattr(self.left_panel.app, 'btn_validate'): self.left_panel.app.btn_validate.config(state=flag)
+        if hasattr(self, 'btn_open_erd'):
+            if not state:
+                self.btn_open_erd.config(state=tk.DISABLED)
+            else:
+                self.after(0, self._update_erd_button_state)
 
     def set_progress(self, value):
         self.after(0, lambda: self.progress_var.set(value))
@@ -362,7 +417,8 @@ class AppGUI(tk.Tk):
             count = 0
             prefix = self.exclude_prefix_var.get().strip() or "Disabled"
             for root, dirs, files in os.walk(self.target_dir):
-                if any(p.startswith(prefix) for p in root.replace('\\', '/').split('/')): continue
+                rel_root = os.path.relpath(root, self.target_dir)
+                if rel_root != '.' and any(p.startswith(prefix) for p in rel_root.replace('\\', '/').split('/')): continue
                 if not self.include_subdirs.get(): dirs.clear()
                 for file in files:
                     if file.startswith('~$') or file.startswith(prefix): continue
@@ -382,7 +438,8 @@ class AppGUI(tk.Tk):
             count = 0
             prefix = self.exclude_prefix_var.get().strip() or "Disabled"
             for root, dirs, files in os.walk(self.target_dir):
-                if any(p.startswith(prefix) for p in root.replace('\\', '/').split('/')): continue
+                rel_root = os.path.relpath(root, self.target_dir)
+                if rel_root != '.' and any(p.startswith(prefix) for p in rel_root.replace('\\', '/').split('/')): continue
                 if not self.include_subdirs.get(): dirs.clear()
                 for file in files:
                     if file.startswith(prefix): continue
@@ -422,8 +479,22 @@ class AppGUI(tk.Tk):
             self.set_buttons_state(False)
             self.set_progress(0)
             prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+            proj_name = self.workspace_file.replace('.csvdesigndb', '') if self.workspace_file else "Workspace"
+            erd_rel_name = f"{proj_name}_ERD.html"
+            erd_full_path = os.path.join(self.workspace_root, erd_rel_name)
+
             self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전체 무결성 글로벌 검증")
-            run_global_validation(self.workspace_root, self.right_panel.log, self.set_progress, prefix)
+            erd_created = run_global_validation(
+                self.workspace_root,
+                self.right_panel.log,
+                self.set_progress,
+                prefix,
+                project_name=proj_name,
+                erd_output_path=erd_full_path
+            )
+            if erd_created:
+                self.erd_html_rel_path = erd_rel_name
+                self.after(0, self.save_workspace_config)
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()
 

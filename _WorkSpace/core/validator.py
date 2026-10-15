@@ -3,9 +3,10 @@ import json
 import pandas as pd
 import numpy as np
 import re
+from core.erd_generator import generate_erd_html
 
 def parse_header(raw_str):
-    name = str(raw_str).strip()
+    name = str(raw_str).strip().lstrip('\ufeff')
     c_type = ""
     constraints = []
     is_schema = False
@@ -47,10 +48,9 @@ def format_errors(invalid_series, limit=3):
     if total > limit: res += f" (외 {total - limit}건)"
     return res
 
-def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="Disabled"):
+def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="Disabled", project_name="Workspace", erd_output_path=None):
     csv_files = []
     for root, dirs, files in os.walk(workspace_root):
-        # 💡 [핵심 버그 픽스] workspace_root를 기준으로 상대 경로에서만 Prefix 필터링 적용!
         rel_root = os.path.relpath(root, workspace_root)
         if rel_root != '.' and any(p.startswith(exclude_prefix) for p in rel_root.replace('\\', '/').split('/')):
             continue
@@ -63,7 +63,7 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
 
     if not csv_files:
         on_log("❌ 워크스페이스 내에 검증할 CSV 파일이 없습니다.")
-        return
+        return False
 
     on_log("🔍 1단계: 메타데이터(.csvmeta) 및 기본키(PK) 설정 여부 확인 중...")
     missing_meta = []
@@ -92,7 +92,7 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
         on_log("다음 파일들은 [3. 추출] 및 [4. 메타 관리] 탭에서 기본키(PK)를 먼저 설정해야 무결성 검사가 가능합니다.\n")
         for f in missing_meta: on_log(f" ❌ {f} (.csvmeta 메타파일 누락 또는 파싱 실패)")
         for f in missing_pk: on_log(f" ❌ {f} (기본키 미설정)")
-        return
+        return False
 
     on_log("✅ 모든 테이블의 메타데이터 확인 완료. 데이터 로드 시작...\n")
     on_progress(20)
@@ -103,6 +103,7 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
         base_name = os.path.basename(csv_file)
         if base_name not in meta_dict: continue
         file_errors[base_name] = [] 
+        rel_path = os.path.relpath(csv_file, workspace_root).replace('\\', '/')
         
         try:
             try: df = pd.read_csv(csv_file, encoding='utf-8-sig', dtype=str)
@@ -116,10 +117,15 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                 col_info[c_name] = {'type': c_type, 'constraints': constraints, 'raw': c, 'is_schema': is_schema}
             
             df = df.rename(columns=rename_map)
-            df_dict[base_name] = {'df': df, 'info': col_info, 'meta': meta_dict[base_name]}
+            df_dict[base_name] = {
+                'df': df,
+                'info': col_info,
+                'meta': meta_dict[base_name],
+                'rel_path': rel_path
+            }
         except Exception as e:
             on_log(f"❌ {base_name} 데이터 로드 실패: {e}")
-            return
+            return False
 
     on_progress(40)
     total_errors = 0
@@ -237,18 +243,28 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                             total_errors += 1
                             
     on_progress(70)
-                    
+    
+    fk_edges = []
     for t_name, t_data in df_dict.items():
         df = t_data['df']
         fks = t_data['meta'].get('foreignKeys', {})
         for fk_name, fk_info in fks.items():
-            local_cols = fk_info['columns']
-            target_table = fk_info['targetTable']
+            local_cols = fk_info.get('columns', [])
+            target_table = fk_info.get('targetTable', '')
             target_basename = os.path.basename(target_table)
             
             if target_basename not in df_dict:
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 타겟 테이블 '{target_basename}' 없음")
                 total_errors += 1
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename or '(미지정)',
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': [],
+                    'is_valid': False,
+                    'error_msg': '타겟 테이블 없음'
+                })
                 continue
                 
             target_data = df_dict[target_basename]
@@ -258,16 +274,44 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
             if len(local_cols) != len(target_pk):
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 매핑 개수 불일치 (로컬 {len(local_cols)}개 vs 타겟 PK {len(target_pk)}개)")
                 total_errors += 1
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename,
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': target_pk,
+                    'is_valid': False,
+                    'error_msg': '매핑 개수 불일치'
+                })
                 continue
             
             missing_locals = [c for c in local_cols if c not in df.columns]
             if missing_locals:
                 file_errors[t_name].append(f"[참조 무결성] 로컬 매핑 컬럼 {missing_locals} 존재하지 않음")
                 total_errors += 1
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename,
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': target_pk,
+                    'is_valid': False,
+                    'error_msg': '로컬 컬럼 누락'
+                })
                 continue
 
             local_subset = df[local_cols].dropna()
-            if local_subset.empty: continue
+            if local_subset.empty:
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename,
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': target_pk,
+                    'is_valid': True,
+                    'error_msg': ''
+                })
+                continue
             
             target_tuples = set([tuple(x) for x in target_df[target_pk].dropna().to_numpy()])
             invalid_mask = ~local_subset.apply(tuple, axis=1).isin(target_tuples)
@@ -277,9 +321,28 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                 invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[참조 무결성] '{fk_name}' 유령 참조 값(없는 타겟) 발견 ➔ {format_errors(invalid_series)}")
                 total_errors += 1
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename,
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': target_pk,
+                    'is_valid': False,
+                    'error_msg': f"유령 참조({invalid_mask.sum()}건)"
+                })
+            else:
+                fk_edges.append({
+                    'from': t_name,
+                    'to': target_basename,
+                    'fk_name': fk_name,
+                    'local_cols': local_cols,
+                    'target_cols': target_pk,
+                    'is_valid': True,
+                    'error_msg': ''
+                })
 
     on_progress(90)
-    on_log("\n🔍 3단계: 검증 결과 리포트 생성 중...")
+    on_log("\n🔍 3단계: 검증 결과 리포트 및 참조 관계도(ERD) 생성 중...")
     
     if total_errors > 0:
         for t_name, err_list in file_errors.items():
@@ -289,7 +352,16 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                 on_log("-" * 60)
                 for err in err_list:
                     on_log(f"  ❌ {err}")
-                
+
+    erd_success = False
+    if erd_output_path:
+        try:
+            generate_erd_html(workspace_root, project_name, df_dict, file_errors, fk_edges, erd_output_path)
+            erd_success = True
+            on_log(f"\n📊 [ERD 생성 완료] 참조 관계도 HTML 파일이 갱신되었습니다: {os.path.basename(erd_output_path)}")
+        except Exception as e:
+            on_log(f"\n⚠️ [ERD 생성 실패] 관계도 파일 생성 중 오류 발생: {e}")
+
     on_progress(100)
     on_log("\n\n" + "="*60)
     if total_errors == 0:
@@ -297,3 +369,4 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
     else:
         on_log(f"⚠️ [검증 실패] 전체 워크스페이스에서 총 {total_errors}건의 위반 사항이 발견되었습니다. 데이터를 수정해주세요.")
     on_log("="*60)
+    return erd_success

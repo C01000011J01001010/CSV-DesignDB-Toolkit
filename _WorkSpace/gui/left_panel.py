@@ -119,7 +119,6 @@ class LeftPanel(tk.Frame):
             return
         
         prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
-        # 💡 [핵심 버그 픽스] target_dir을 기준으로 상대 경로에서만 Prefix 필터링 적용!
         files = []
         for root, dirs, files_in_dir in os.walk(self.app.target_dir):
             rel_root = os.path.relpath(root, self.app.target_dir)
@@ -307,15 +306,19 @@ class LeftPanel(tk.Frame):
         
         guide_text = (
             "🛡️ [전체 데이터베이스 무결성 검증]\n\n"
-            "워크스페이스(Root 폴더 및 모든 하위 폴더) 전체를 대상으로 RDBMS 수준의 5대 무결성을 교차 검증합니다.\n\n"
+            "워크스페이스(Root: 폴더 및 하위 폴더) 전체를 대상으로 RDBMS 수준의 5대 무결성을 교차 검증합니다.\n\n"
             "1. 개체 무결성 : 기본키(PK)의 중복 및 빈 칸(Null) 존재 여부\n"
             "2. 참조 무결성 : 외래키(FK)가 가리키는 대상이 실제로 존재하는지 교차 확인\n"
             "3. 도메인 무결성: 데이터 타입의 형식 일치 여부\n"
             "4. 고유 무결성 : UNIQUE 제약조건 위반 여부\n"
             "5. Null 무결성 : NOT NULL 제약조건 위반 여부\n\n"
-            "※ 검증 전, 모든 파일의 [메타 추출] 및 [PK 설정]이 완료되어야 합니다."
+            "※ 검증 전, 모든 파일의 [메타 추출] 및 [PK 설정]이 완료되어야 합니다.\n"
+            "※ 검증 완료 시 워크스페이스 전체의 참조 관계도(ERD) HTML 파일이 자동 생성/갱신됩니다."
         )
         tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
 
         self.app.btn_validate = tk.Button(inner, text="데이터베이스 전체 무결성 글로벌 검증 시작", font=("맑은 고딕", 12, "bold"), bg="#DC3545", fg="white", bd=0, height=3, command=self.app.run_global_validation)
-        self.app.btn_validate.pack(fill="x", padx=10, pady=10)
+        self.app.btn_validate.pack(fill="x", padx=10, pady=(10, 5))
+
+        self.app.btn_open_erd = tk.Button(inner, text="📊 참조 관계도(ERD) 브라우저로 열기 (무결성 검증 시 자동 생성)", font=("맑은 고딕", 11, "bold"), bg="#444444", fg="white", bd=0, height=2, state=tk.DISABLED, command=self.app.open_erd_viewer)
+        self.app.btn_open_erd.pack(fill="x", padx=10, pady=5)
