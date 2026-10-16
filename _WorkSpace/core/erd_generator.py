@@ -34,7 +34,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         display: flex;
         flex-direction: column;
         height: 100vh;
-        height: 100dvh; 
+        height: 100dvh;
+        -webkit-user-select: none;
+        user-select: none;
     }
 
     .top-navbar {
@@ -157,39 +159,47 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         background-image: radial-gradient(var(--bg-input) 1px, transparent 1px);
         background-size: 24px 24px;
         outline: none;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
     }
     
-    .vis-network:focus {
+    .vis-network, .vis-network canvas {
         outline: none;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
     }
 
-    /* 💡 [원상복구] 하단 상태 바 (가로모드에서만 CSS로 숨김) */
+    /* 하단 상태 바 (세로모드/PC 표시, 가로모드에서만 숨김) */
     .status-bar {
         background-color: var(--bg-input);
         border-top: 1px solid var(--border-color);
-        padding: 8px 16px;
-        font-size: 11px;
+        padding: 6px 20px;
+        font-size: 12px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         color: #BBBBBB;
+        z-index: 10;
         flex-wrap: wrap;
         gap: 8px;
-        z-index: 10;
     }
     .legend {
         display: flex;
-        gap: 12px;
+        gap: 18px;
         align-items: center;
         flex-wrap: wrap;
     }
     .legend-item {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;
         white-space: nowrap;
     }
-    .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .dot { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
 
     .overlay {
         display: none;
@@ -204,46 +214,71 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     .info-panel {
         background-color: var(--bg-bar);
-        border-left: none;
+        border-left: 1px solid var(--border-color);
         display: flex;
         flex-direction: column;
         overflow-y: auto;
         padding: 16px;
         z-index: 15;
-        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-        
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        max-height: 80%; 
-        height: auto;
-        min-height: 40%;
-        border-top: 2px solid var(--accent);
-        border-radius: 16px 16px 0 0;
-        box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
-        transform: translateY(100%);
     }
-    .info-panel.open {
-        transform: translateY(0);
+
+    /* PC 뷰: 우측 사이드바 고정 */
+    @media (min-width: 901px) {
+        .info-panel {
+            width: 400px;
+            height: 100%;
+            display: flex !important; 
+            position: static !important;
+            transform: none !important;
+        }
+        .btn-close-panel { display: none; }
+        .btn-toggle-menu { display: none; }
+        .options-panel {
+            position: static;
+            display: flex;
+            box-shadow: none;
+            max-height: none;
+        }
     }
-    .btn-close-panel {
-        position: absolute;
-        top: 12px;
-        right: 16px;
-        background: var(--bg-input);
-        border: 1px solid #555;
-        color: #FFF;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        font-size: 14px;
-        font-weight: bold;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 16;
+
+    /* 모바일 뷰: 바텀 시트 팝업 */
+    @media (max-width: 900px) {
+        .info-panel {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            max-height: 80%; 
+            height: auto;
+            min-height: 40%;
+            border-left: none;
+            border-top: 2px solid var(--accent);
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+            transform: translateY(100%);
+            transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .info-panel.open {
+            transform: translateY(0);
+        }
+        .btn-close-panel {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: var(--bg-input);
+            border: 1px solid #555;
+            color: #FFF;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 16;
+        }
     }
 
     .info-panel h3 {
@@ -309,24 +344,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-size: 12px;
     }
 
-    @media (min-width: 901px) {
-        .options-panel { position: static; box-shadow: none; display: flex; }
-        .btn-toggle-menu { display: none; }
-        .info-panel {
-            width: 450px;
-            left: auto;
-            right: 16px;
-            bottom: 16px;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            max-height: 85%;
-            transform: translateY(0); /* PC에선 트랜지션 없이 항상 띄울 준비 */
-            display: none; /* 내용 없으면 아예 숨김 */
-        }
-        .info-panel.open { display: flex; }
-    }
-
-    /* 💡 가로 모드 (높이가 좁을 때 하단 바 숨김 처리) */
+    /* 가로 모드에서 하단 바 숨김 */
     @media (max-height: 450px) {
         .top-navbar { height: 36px; min-height: 36px; }
         .status-bar { display: none; }
@@ -388,7 +406,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
 </div>
 
-<!-- 💡 [원상복구] 하단 UI 원위치 -->
 <div class="status-bar">
     <div class="legend">
         <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상 테이블</div>
@@ -424,6 +441,11 @@ function toggleOptions() {
 }
 
 function closeInfoPanel() {
+    document.querySelector('.info-panel h3').innerHTML = `📌 정보 확인`;
+    document.getElementById('sb-path').innerHTML = `노드나 화살표를 선택해주세요.`;
+    document.getElementById('sb-rows').innerHTML = ``;
+    document.getElementById("sidebar-content").innerHTML = ``;
+
     document.getElementById("infoPanel").classList.remove("open");
     document.getElementById("overlay").classList.remove("show");
     if (network) network.unselectAll();
@@ -508,6 +530,249 @@ function buildNodeSvg(node, level) {
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
+// 💡 [이동 거리(8px) + 짧은 시간(220ms) 복합 판정 컨트롤러]
+// 1. 손가락이 8px 이상 움직이면 -> 시간(0.1초든 0.5초든)에 상관없이 즉시 '이동(Drag) 모드'로 전환 (절대 정보창 안 열림)
+// 2. 제자리에서 0.22초(220ms) 이상 누르고 있어도 -> '이동(Drag) 모드'로 전환
+// 3. 움직이지 않고(< 8px) 0.22초 안에 톡 치고 뗐을 때만 -> '정보창(Tap)' 오픈
+function setupDirectInputController(container) {
+    const TAP_MAX_MS = 220;
+    const DRAG_PIXEL_THRESHOLD = 8;
+
+    let usingTouch = false;
+    let isMultiTouch = false;
+    let isPointerDown = false;
+    let isDragConfirmed = false;
+    let pointerDownTime = 0;
+    let startDomPos = { x: 0, y: 0 };
+    let maxMoveDistance = 0;
+
+    let activeNodeId = null;
+    let activeEdgeId = null;
+    let initialNodeCanvasPos = null;
+    let nodeGrabOffset = { x: 0, y: 0 };
+    let holdTimer = null;
+
+    function getDomCoords(clientX, clientY) {
+        const rect = container.getBoundingClientRect();
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    }
+
+    function lockNodeForDrag(nodeId, state) {
+        try {
+            if (network && network.body && network.body.nodes && network.body.nodes[nodeId]) {
+                network.body.nodes[nodeId].options.fixed.x = state;
+                network.body.nodes[nodeId].options.fixed.y = state;
+            }
+        } catch (err) {}
+    }
+
+    function cancelActiveInteraction() {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+        if (activeNodeId !== null) {
+            lockNodeForDrag(activeNodeId, false);
+            network.setOptions({ interaction: { dragView: true } });
+        }
+        isPointerDown = false;
+        isDragConfirmed = false;
+        activeNodeId = null;
+        activeEdgeId = null;
+        initialNodeCanvasPos = null;
+    }
+
+    function onStart(clientX, clientY, rawEvent) {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+
+        const domPos = getDomCoords(clientX, clientY);
+        isPointerDown = true;
+        isDragConfirmed = false;
+        pointerDownTime = Date.now();
+        startDomPos = domPos;
+        maxMoveDistance = 0;
+
+        const hitNode = network.getNodeAt(domPos);
+        if (hitNode !== undefined && hitNode !== null) {
+            activeNodeId = hitNode;
+            activeEdgeId = null;
+
+            const posMap = network.getPositions([activeNodeId]);
+            const nodePos = posMap[activeNodeId] || { x: 0, y: 0 };
+            initialNodeCanvasPos = { x: nodePos.x, y: nodePos.y };
+
+            const canvasTouch = network.DOMtoCanvas(domPos);
+            nodeGrabOffset = {
+                x: nodePos.x - canvasTouch.x,
+                y: nodePos.y - canvasTouch.y
+            };
+
+            // 노드를 잡은 동안에는 배경 캔버스가 움직이지 않도록 고정
+            network.setOptions({ interaction: { dragView: false } });
+            lockNodeForDrag(activeNodeId, true);
+
+            // 0.22초 이상 누르고 있으면 드래그 모드로 확정
+            holdTimer = setTimeout(function() {
+                if (isPointerDown && activeNodeId !== null) {
+                    isDragConfirmed = true;
+                    network.selectNodes([activeNodeId]);
+                }
+            }, TAP_MAX_MS);
+
+            if (rawEvent && rawEvent.cancelable) {
+                rawEvent.preventDefault();
+            }
+        } else {
+            activeNodeId = null;
+            initialNodeCanvasPos = null;
+            const hitEdge = network.getEdgeAt(domPos);
+            activeEdgeId = (hitEdge !== undefined && hitEdge !== null) ? hitEdge : null;
+        }
+    }
+
+    function onMove(clientX, clientY, rawEvent) {
+        if (!isPointerDown) return;
+
+        const domPos = getDomCoords(clientX, clientY);
+        const dist = Math.hypot(domPos.x - startDomPos.x, domPos.y - startDomPos.y);
+        if (dist > maxMoveDistance) {
+            maxMoveDistance = dist;
+        }
+
+        // 손가락이 8px 이상 움직이는 순간 시간과 무관하게 즉시 드래그(이동)로 확정!
+        if (maxMoveDistance >= DRAG_PIXEL_THRESHOLD) {
+            isDragConfirmed = true;
+        }
+
+        if (activeNodeId !== null) {
+            if (rawEvent && rawEvent.cancelable) {
+                rawEvent.preventDefault();
+            }
+            if (isDragConfirmed) {
+                const canvasPos = network.DOMtoCanvas(domPos);
+                const targetX = canvasPos.x + nodeGrabOffset.x;
+                const targetY = canvasPos.y + nodeGrabOffset.y;
+                network.moveNode(activeNodeId, targetX, targetY);
+                try {
+                    if (document.getElementById("chkPhysics").checked && network.physics) {
+                        network.physics.startSimulation();
+                    }
+                } catch (err) {}
+            }
+        }
+    }
+
+    function onEnd(clientX, clientY, rawEvent) {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+
+        const elapsed = Date.now() - pointerDownTime;
+        const wasQuickTap = (!isDragConfirmed) && (maxMoveDistance < DRAG_PIXEL_THRESHOLD) && (elapsed < TAP_MAX_MS);
+
+        if (activeNodeId !== null) {
+            const targetNode = activeNodeId;
+            activeNodeId = null;
+
+            lockNodeForDrag(targetNode, false);
+            network.setOptions({ interaction: { dragView: true } });
+
+            if (wasQuickTap) {
+                // 움직이지 않고(< 8px) 0.22초 이내에 톡 치고 뗐을 때만 정보창 열기
+                if (initialNodeCanvasPos) {
+                    network.moveNode(targetNode, initialNodeCanvasPos.x, initialNodeCanvasPos.y);
+                }
+                network.selectNodes([targetNode]);
+                renderSidebar(targetNode);
+            } else {
+                // 조금이라도 끌었거나(>= 8px) 0.22초 이상 눌렀다면 무조건 이동만 확정 (정보창 절대 안 열림)
+                try { network.storePositions(); } catch (err) {}
+            }
+            initialNodeCanvasPos = null;
+            isDragConfirmed = false;
+            return;
+        }
+
+        if (activeEdgeId !== null) {
+            const targetEdge = activeEdgeId;
+            activeEdgeId = null;
+            if (wasQuickTap) {
+                network.selectEdges([targetEdge]);
+                renderEdgeSidebar(targetEdge);
+            }
+            isDragConfirmed = false;
+            return;
+        }
+
+        if (wasQuickTap) {
+            closeInfoPanel();
+        }
+        isDragConfirmed = false;
+    }
+
+    container.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        return false;
+    });
+
+    container.addEventListener("touchstart", function(e) {
+        usingTouch = true;
+        if (e.touches.length > 1) {
+            isMultiTouch = true;
+            cancelActiveInteraction();
+            return;
+        }
+        isMultiTouch = false;
+        const t = e.touches[0];
+        onStart(t.clientX, t.clientY, e);
+    }, { passive: false, capture: true });
+
+    container.addEventListener("touchmove", function(e) {
+        if (isMultiTouch || e.touches.length > 1) return;
+        const t = e.touches[0];
+        onMove(t.clientX, t.clientY, e);
+    }, { passive: false, capture: true });
+
+    container.addEventListener("touchend", function(e) {
+        if (isMultiTouch) {
+            if (e.touches.length === 0) isMultiTouch = false;
+            return;
+        }
+        const t = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
+        onEnd(t ? t.clientX : undefined, t ? t.clientY : undefined, e);
+    }, { passive: false, capture: true });
+
+    container.addEventListener("touchcancel", function(e) {
+        cancelActiveInteraction();
+    }, { passive: false, capture: true });
+
+    container.addEventListener("mousedown", function(e) {
+        if (usingTouch) return;
+        if (e.button !== 0) return;
+        onStart(e.clientX, e.clientY, e);
+    }, true);
+
+    window.addEventListener("mousemove", function(e) {
+        if (usingTouch || !isPointerDown) return;
+        onMove(e.clientX, e.clientY, e);
+    }, true);
+
+    window.addEventListener("mouseup", function(e) {
+        if (usingTouch || !isPointerDown) return;
+        onEnd(e.clientX, e.clientY, e);
+    }, true);
+}
+
 function initGraph() {
     if (typeof vis === "undefined") {
         document.getElementById("network-container").innerHTML =
@@ -536,7 +801,6 @@ function initGraph() {
         },
         edges: {
             arrows: { to: { enabled: true, scaleFactor: 1.0 } },
-            // 💡 [요구사항 3] 화살표에 렌더링되던 지저분한 라벨 설정 완전 제거
             smooth: { enabled: true, type: "dynamic" }
         },
         physics: {
@@ -552,30 +816,18 @@ function initGraph() {
             stabilization: { iterations: 150 }
         },
         interaction: {
-            hover: true,
+            dragNodes: false,
+            dragView: true,
+            zoomView: true,
+            hover: false,
             navigationButtons: false,
-            keyboard: true,
-            tooltipDelay: 9999999 
+            keyboard: true
         }
     };
 
     network = new vis.Network(container, data, options);
     updateGraphLevel();
-
-    // 💡 [요구사항 2] 터치 오작동 원인 제거: 
-    // 임의로 넣었던 dragStart 창 닫기 로직을 완전히 삭제하여 순정 터치/드래그 충돌을 해결.
-    // vis.js 기본 특성상 '짧은 터치 후 뗄 때' click 이벤트가 발생하며, 드래그 무브 시에는 click이 발생하지 않습니다.
-    network.on("click", function (params) {
-        if (params.nodes.length > 0) {
-            renderSidebar(params.nodes[0]);
-        } else if (params.edges.length > 0) {
-            // 💡 [요구사항 3] 화살표(선)를 짧게 터치(클릭)했을 때 참조 정보 UI를 띄움
-            renderEdgeSidebar(params.edges[0]);
-        } else {
-            closeInfoPanel();
-        }
-    });
-
+    setupDirectInputController(container);
     updateSummaryStats();
 }
 
@@ -636,7 +888,6 @@ function updateGraphLevel() {
             id: e.id,
             from: e.from,
             to: e.to,
-            // 💡 [요구사항 3] 화살표 텍스트 라벨 무조건 제거
             label: undefined,
             smooth: smoothOpt,
             color: {
@@ -650,6 +901,10 @@ function updateGraphLevel() {
     }
     edgesDataset.clear();
     edgesDataset.add(updatedEdges);
+    
+    if (window.innerWidth <= 900) {
+        document.getElementById("optionsPanel").classList.remove("show");
+    }
 }
 
 function renderSidebar(nodeId) {
@@ -709,7 +964,6 @@ function renderSidebar(nodeId) {
     }
 }
 
-// 💡 [요구사항 3] 화살표(Edge) 터치 시 띄워줄 새로운 참조 정보 UI 함수
 function renderEdgeSidebar(edgeId) {
     const edge = rawData.edges.find(e => e.id === edgeId);
     if (!edge) return;
