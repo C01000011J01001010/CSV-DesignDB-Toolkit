@@ -6,50 +6,110 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<!-- 모바일 화면 크기 및 줌 고정 (100dvh 버그 대비 및 터치 최적화) -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>__PROJECT_NAME__ - CSV DesignDB ERD Viewer</title>
 <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>
+    :root {
+        --bg-main: #1E1E1E;
+        --bg-bar: #252526;
+        --bg-input: #2D2D2D;
+        --border-color: #3E3E42;
+        --text-main: #D4D4D4;
+        --text-bright: #FFFFFF;
+        --accent: #007ACC;
+        --accent-hover: #0098FF;
+        --error: #DC3545;
+        --pk-color: #FFD700;
+        --fk-color: #00FF66;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    /* 모바일 브라우저 주소창 이슈 해결을 위해 100dvh 사용, fallback으로 100vh */
     body {
-        background-color: #1E1E1E;
-        color: #D4D4D4;
+        background-color: var(--bg-main);
+        color: var(--text-main);
         font-family: 'Malgun Gothic', 'Segoe UI', Consolas, sans-serif;
         overflow: hidden;
         display: flex;
         flex-direction: column;
         height: 100vh;
+        height: 100dvh; 
     }
-    .toolbar {
-        background-color: #252526;
-        border-bottom: 1px solid #3E3E42;
-        padding: 10px 20px;
+
+    /* -----------------------------
+       상단 글로벌 툴바 (항상 고정)
+    ------------------------------ */
+    .top-navbar {
+        background-color: var(--bg-bar);
+        border-bottom: 1px solid var(--border-color);
+        height: 48px;
+        min-height: 48px;
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 14px;
-        flex-wrap: wrap;
-        z-index: 10;
+        padding: 0 16px;
+        z-index: 20;
     }
     .brand {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: bold;
-        color: #FFFFFF;
+        color: var(--text-bright);
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-right: 8px;
+        gap: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .brand span.proj {
-        color: #00FF66;
+        color: var(--fk-color);
         font-family: Consolas, monospace;
     }
+    .btn-toggle-menu {
+        background-color: var(--bg-input);
+        color: var(--text-bright);
+        border: 1px solid #555;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* -----------------------------
+       옵션 패널 (기본 숨김, 토글 시 등장)
+    ------------------------------ */
+    .options-panel {
+        background-color: var(--bg-bar);
+        border-bottom: 1px solid var(--border-color);
+        padding: 12px 16px;
+        display: none; /* 토글로 제어 */
+        flex-wrap: wrap;
+        gap: 12px;
+        z-index: 19;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+    .options-panel.show {
+        display: flex;
+    }
+
     .control-group {
         display: flex;
         align-items: center;
         gap: 8px;
-        background: #1E1E1E;
-        padding: 5px 12px;
+        background: var(--bg-main);
+        padding: 6px 12px;
         border-radius: 4px;
-        border: 1px solid #3E3E42;
+        border: 1px solid var(--border-color);
+        flex: 1 1 auto;
+        min-width: 200px; /* 너무 좁아지지 않도록 */
     }
     .control-group label {
         font-size: 12px;
@@ -57,62 +117,128 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-weight: bold;
         cursor: pointer;
         user-select: none;
+        white-space: nowrap;
     }
     select, input[type="text"] {
-        background-color: #2D2D2D;
-        color: #FFFFFF;
+        background-color: var(--bg-input);
+        color: var(--text-bright);
         border: 1px solid #555555;
-        padding: 5px 10px;
+        padding: 6px 10px;
         border-radius: 3px;
         font-family: 'Malgun Gothic', Consolas, sans-serif;
-        font-size: 12px;
+        font-size: 13px;
         outline: none;
+        flex: 1;
+        min-width: 0; /* flex 컨테이너 안에서 축소 허용 */
     }
     select:focus, input[type="text"]:focus {
-        border-color: #007ACC;
+        border-color: var(--accent);
     }
     button.btn {
-        background-color: #007ACC;
+        background-color: var(--accent);
         color: white;
         border: none;
-        padding: 6px 12px;
-        border-radius: 3px;
-        font-size: 12px;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-size: 13px;
         font-weight: bold;
         cursor: pointer;
         transition: background 0.15s;
+        white-space: nowrap;
     }
-    button.btn:hover { background-color: #0098FF; }
-    button.btn-secondary { background-color: #444444; }
-    button.btn-secondary:hover { background-color: #5A5A5A; }
+    button.btn:active { background-color: var(--accent-hover); }
 
+    /* -----------------------------
+       메인 캔버스 및 레이아웃
+    ------------------------------ */
     .main-wrap {
         flex: 1;
         display: flex;
         position: relative;
-        overflow: hidden;
+        overflow: hidden; /* 영역 밖 잘림 방지 */
     }
     #network-container {
         flex: 1;
         height: 100%;
-        background-color: #1E1E1E;
-        background-image: radial-gradient(#2D2D2D 1px, transparent 1px);
+        background-color: var(--bg-main);
+        background-image: radial-gradient(var(--bg-input) 1px, transparent 1px);
         background-size: 24px 24px;
+        outline: none;
     }
 
-    .sidebar {
-        width: 390px;
-        background-color: #252526;
-        border-left: 1px solid #3E3E42;
+    /* -----------------------------
+       우측 사이드바 (PC 뷰) / 바텀시트 (모바일 뷰)
+    ------------------------------ */
+    .info-panel {
+        background-color: var(--bg-bar);
+        border-left: 1px solid var(--border-color);
         display: flex;
         flex-direction: column;
         overflow-y: auto;
         padding: 16px;
+        z-index: 15;
+        transition: transform 0.3s ease;
     }
-    .sidebar h3 {
-        font-size: 15px;
-        color: #FFD700;
+
+    /* PC 기본 상태 (우측 사이드바) */
+    @media (min-width: 901px) {
+        .info-panel {
+            width: 400px;
+            height: 100%;
+        }
+        /* PC에서는 닫기 버튼 숨김 */
+        .btn-close-panel { display: none; }
+        
+        .btn-toggle-menu { display: none; } /* PC에선 토글 버튼 숨김 */
+        .options-panel {
+            display: flex; /* PC에선 옵션바 항상 펼침 */
+            box-shadow: none;
+            max-height: none;
+        }
+    }
+
+    /* 모바일/태블릿 상태 (바텀 시트 팝업) */
+    @media (max-width: 900px) {
+        .info-panel {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 60vh; /* 화면의 60% 높이 차지 */
+            border-left: none;
+            border-top: 2px solid var(--accent);
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+            transform: translateY(100%); /* 기본적으로 아래로 숨김 */
+        }
+        .info-panel.open {
+            transform: translateY(0); /* 호출 시 위로 팝업 */
+        }
+        .btn-close-panel {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: var(--bg-input);
+            border: 1px solid #555;
+            color: #FFF;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    }
+
+    /* 패널 내부 컨텐츠 디자인 */
+    .info-panel h3 {
+        font-size: 16px;
+        color: var(--pk-color);
         margin-bottom: 8px;
+        padding-right: 36px; /* 닫기 버튼 공간 확보 */
         word-break: break-all;
     }
     .meta-badge {
@@ -123,12 +249,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         line-height: 1.5;
     }
     .section-title {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: bold;
-        color: #00FF66;
-        margin: 14px 0 8px 0;
-        border-bottom: 1px solid #3E3E42;
-        padding-bottom: 4px;
+        color: var(--fk-color);
+        margin: 16px 0 8px 0;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 6px;
     }
     .col-table {
         width: 100%;
@@ -137,119 +263,150 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-family: Consolas, 'Malgun Gothic', monospace;
     }
     .col-table th, .col-table td {
-        border: 1px solid #3E3E42;
-        padding: 6px 8px;
+        border: 1px solid var(--border-color);
+        padding: 8px;
         text-align: left;
         vertical-align: top;
+        word-break: break-word;
     }
     .col-table th {
-        background-color: #2D2D2D;
+        background-color: var(--bg-input);
         color: #CCCCCC;
     }
-    .badge-pk { color: #FFD700; font-weight: bold; }
-    .badge-fk { color: #00FF66; font-weight: bold; }
+    .badge-pk { color: var(--pk-color); font-weight: bold; white-space: nowrap; }
+    .badge-fk { color: var(--fk-color); font-weight: bold; white-space: nowrap; }
     .badge-type { color: #569CD6; }
-    .badge-const { color: #CE9178; font-size: 11px; display: block; margin-top: 2px; }
+    .badge-const { color: #CE9178; font-size: 11px; display: block; margin-top: 4px; }
+    
     .err-box {
         background-color: rgba(220, 53, 69, 0.15);
-        border: 1px solid #DC3545;
+        border: 1px solid var(--error);
         color: #FF7B88;
-        padding: 8px 10px;
-        border-radius: 4px;
+        padding: 10px;
+        border-radius: 6px;
         font-size: 12px;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
         line-height: 1.4;
     }
     .ok-box {
         background-color: rgba(40, 167, 69, 0.15);
         border: 1px solid #28A745;
         color: #5CD679;
-        padding: 8px 10px;
-        border-radius: 4px;
+        padding: 10px;
+        border-radius: 6px;
         font-size: 12px;
     }
+
+    /* -----------------------------
+       하단 상태바 (범례 및 통계)
+    ------------------------------ */
     .status-bar {
-        background-color: #2D2D2D;
-        border-top: 1px solid #3E3E42;
-        padding: 6px 20px;
-        font-size: 12px;
+        background-color: var(--bg-input);
+        border-top: 1px solid var(--border-color);
+        padding: 8px 16px;
+        font-size: 11px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         color: #BBBBBB;
+        flex-wrap: wrap; /* 모바일에서 자동 줄바꿈 */
+        gap: 8px;
+        z-index: 10;
     }
     .legend {
         display: flex;
-        gap: 18px;
+        gap: 12px;
         align-items: center;
+        flex-wrap: wrap;
     }
     .legend-item {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
+        white-space: nowrap;
     }
-    .dot { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+    .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+    /* 가로 모드 (Landscape) 아주 좁은 세로 높이 대비 */
+    @media (max-height: 450px) {
+        .top-navbar { height: 36px; min-height: 36px; }
+        .status-bar { display: none; } /* 너무 좁으면 하단바 숨김 */
+        .info-panel { height: 85vh; } /* 가로모드 팝업 시 높이 최대화 */
+    }
 </style>
 </head>
 <body>
 
-<div class="toolbar">
+<!-- 상단 네비게이션 바 (타이틀 및 토글) -->
+<div class="top-navbar">
     <div class="brand">
-        📊 ERD 참조 관계도 <span class="proj">[__PROJECT_NAME__]</span>
+        📊 ERD <span class="proj">[__PROJECT_NAME__]</span>
     </div>
+    <button class="btn-toggle-menu" onclick="toggleOptions()">
+        ⚙️ 설정 / 검색 ▼
+    </button>
+</div>
 
+<!-- 접이식 옵션 패널 -->
+<div class="options-panel" id="optionsPanel">
     <div class="control-group">
         <label for="levelSelect">표시 단계:</label>
         <select id="levelSelect" onchange="updateGraphLevel()">
-            <option value="1">Level 1: 테이블명만 표시 (구조 조망)</option>
-            <option value="2">Level 2: Key 컬럼명만 (PK / FK)</option>
-            <option value="3" selected>Level 3: Key 컬럼 + 데이터 타입 (기본)</option>
-            <option value="4">Level 4: 전체 컬럼 + 데이터 타입</option>
-            <option value="5">Level 5: 전체 스키마 상세 (제약조건 포함)</option>
+            <option value="1">Level 1: 테이블명 (구조 조망)</option>
+            <option value="2">Level 2: PK / FK 컬럼</option>
+            <option value="3" selected>Level 3: PK/FK + 타입 (기본)</option>
+            <option value="4">Level 4: 전체 컬럼 + 타입</option>
+            <option value="5">Level 5: 전체 스키마 (상세 제약조건)</option>
         </select>
     </div>
 
     <div class="control-group">
         <label for="searchInput">🔍 검색:</label>
-        <input type="text" id="searchInput" list="tableList" placeholder="테이블명 입력..." oninput="onSearchTable()">
+        <input type="text" id="searchInput" list="tableList" placeholder="테이블명..." oninput="onSearchTable()">
         <datalist id="tableList"></datalist>
     </div>
 
     <div class="control-group">
         <input type="checkbox" id="chkEdgeLabel" checked onchange="updateGraphLevel()">
-        <label for="chkEdgeLabel">화살표(FK) 라벨 표시</label>
+        <label for="chkEdgeLabel">화살표(FK) 라벨</label>
     </div>
 
     <div class="control-group">
         <input type="checkbox" id="chkHideIsolated" onchange="updateGraphLevel()">
-        <label for="chkHideIsolated">고립 테이블 숨기기</label>
+        <label for="chkHideIsolated">고립 노드 숨김</label>
     </div>
 
     <div class="control-group">
         <input type="checkbox" id="chkPhysics" checked onchange="togglePhysics()">
-        <label for="chkPhysics">물리 엔진(자동 배치)</label>
+        <label for="chkPhysics">물리엔진(자동배치)</label>
     </div>
 
-    <button class="btn btn-secondary" onclick="fitNetwork()">🔄 화면 맞춤</button>
+    <button class="btn" onclick="fitNetwork()">🔄 화면 맞춤</button>
 </div>
 
+<!-- 메인 작업 영역 -->
 <div class="main-wrap">
+    <!-- 그래프 캔버스 -->
     <div id="network-container"></div>
-    <div class="sidebar" id="sidebar">
+    
+    <!-- 우측 패널 / 바텀 시트 -->
+    <div class="info-panel" id="infoPanel">
+        <button class="btn-close-panel" onclick="closeInfoPanel()">X</button>
         <h3>📌 테이블 상세 정보</h3>
         <div class="meta-badge">그래프에서 테이블 노드를 클릭하면 상세 스키마와 무결성 검증 결과를 확인할 수 있습니다.</div>
         <div id="sidebar-content"></div>
     </div>
 </div>
 
+<!-- 하단 상태 바 -->
 <div class="status-bar">
     <div class="legend">
-        <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상 테이블</div>
-        <div class="legend-item"><span class="dot" style="background:#DC3545;"></span> 무결성 위반 / 유령 타겟</div>
-        <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑 PK</span> 기본키</div>
-        <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗 FK</span> 외래키</div>
-        <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">━━▶</span> 정상 참조(FK)</div>
-        <div class="legend-item"><span style="color:#FF4444;font-weight:bold;">┅┅▶</span> 깨진 참조(위반)</div>
+        <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상</div>
+        <div class="legend-item"><span class="dot" style="background:#DC3545;"></span> 위반/유령</div>
+        <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑</span> PK</div>
+        <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗</span> FK</div>
+        <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">━━▶</span> 정상참조</div>
+        <div class="legend-item"><span style="color:#FF4444;font-weight:bold;">┅┅▶</span> 깨진참조</div>
     </div>
     <div id="stats-info">생성 시각: __GENERATED_AT__</div>
 </div>
@@ -270,6 +427,19 @@ function escapeXml(unsafe) {
         .replace(/'/g, "&apos;");
 }
 
+// ⚙️ 상단 모바일 메뉴 토글
+function toggleOptions() {
+    const p = document.getElementById("optionsPanel");
+    if (p.classList.contains("show")) p.classList.remove("show");
+    else p.classList.add("show");
+}
+
+// 📱 바텀 시트 닫기
+function closeInfoPanel() {
+    document.getElementById("infoPanel").classList.remove("open");
+    if (network) network.unselectAll();
+}
+
 function buildTooltipText(node) {
     const lines = [];
     lines.push(`[${node.label}] (${node.rel_path})`);
@@ -285,6 +455,7 @@ function buildTooltipText(node) {
     return lines.join("\n");
 }
 
+// 노드(테이블) SVG 생성 로직
 function buildNodeSvg(node, level) {
     const rows = [];
     const cols = node.columns || [];
@@ -326,35 +497,36 @@ function buildNodeSvg(node, level) {
         if (lineLen > maxChars) maxChars = lineLen;
     }
 
-    const width = Math.max(220, Math.min(640, Math.ceil(maxChars * 8.2) + 36));
-    const headerHeight = 36;
+    // 모바일 환경을 고려하여 폰트 렌더링 폭을 약간 더 넉넉하게 계산
+    const width = Math.max(200, Math.min(640, Math.ceil(maxChars * 8.5) + 36));
+    const headerHeight = 38;
     const rowHeight = 24;
-    const bodyHeight = rows.length > 0 ? (rows.length * rowHeight + 12) : 6;
+    const bodyHeight = rows.length > 0 ? (rows.length * rowHeight + 14) : 8;
     const height = headerHeight + bodyHeight;
 
     const headerBg = node.is_missing_target ? "#8B0000" : (node.has_error ? "#C9302C" : "#007ACC");
     const borderCol = node.has_error ? "#FF4444" : "#3E3E42";
-    const borderWidth = node.has_error ? 2.5 : 1.5;
+    const borderWidth = node.has_error ? 3 : 2;
 
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
-    svg += `<rect x="1" y="1" width="${width-2}" height="${height-2}" rx="6" ry="6" fill="#252526" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
-    svg += `<path d="M 1 7 Q 1 1 7 1 L ${width-7} 1 Q ${width-1} 1 ${width-1} 7 L ${width-1} ${headerHeight} L 1 ${headerHeight} Z" fill="${headerBg}"/>`;
-    svg += `<text x="12" y="23" fill="#FFFFFF" font-family="Consolas, Malgun Gothic, sans-serif" font-size="13.5" font-weight="bold">${escapeXml(titleText)}</text>`;
+    svg += `<rect x="1" y="1" width="${width-2}" height="${height-2}" rx="8" ry="8" fill="#252526" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
+    svg += `<path d="M 1 9 Q 1 1 9 1 L ${width-9} 1 Q ${width-1} 1 ${width-1} 9 L ${width-1} ${headerHeight} L 1 ${headerHeight} Z" fill="${headerBg}"/>`;
+    svg += `<text x="14" y="24" fill="#FFFFFF" font-family="Consolas, Malgun Gothic, sans-serif" font-size="14" font-weight="bold">${escapeXml(titleText)}</text>`;
 
-    let y = headerHeight + 20;
+    let y = headerHeight + 22;
     for (const r of rows) {
         let nameColor = "#D4D4D4";
         if (r.is_pk) nameColor = "#FFD700";
         else if (r.is_fk) nameColor = "#00FF66";
         else if (r.is_empty) nameColor = "#888888";
 
-        svg += `<text x="12" y="${y}" font-family="Consolas, Malgun Gothic, sans-serif" font-size="12">`;
+        svg += `<text x="14" y="${y}" font-family="Consolas, Malgun Gothic, sans-serif" font-size="13">`;
         svg += `<tspan fill="${nameColor}" font-weight="${(r.is_pk || r.is_fk) ? "bold" : "normal"}">${escapeXml(r.icon)} ${escapeXml(r.name)}</tspan>`;
         if (r.type) {
             svg += ` <tspan fill="#569CD6">${escapeXml(r.type)}</tspan>`;
         }
         if (r.consts) {
-            svg += ` <tspan fill="#CE9178" font-size="11">${escapeXml(r.consts)}</tspan>`;
+            svg += ` <tspan fill="#CE9178" font-size="11.5">${escapeXml(r.consts)}</tspan>`;
         }
         svg += `</text>`;
         y += rowHeight;
@@ -383,6 +555,8 @@ function initGraph() {
 
     const container = document.getElementById("network-container");
     const data = { nodes: nodesDataset, edges: edgesDataset };
+    
+    // 모바일 터치 최적화 옵션 적용
     const options = {
         nodes: {
             shape: "image",
@@ -393,7 +567,7 @@ function initGraph() {
             arrows: { to: { enabled: true, scaleFactor: 1.0 } },
             font: {
                 color: "#E0E0E0",
-                size: 11,
+                size: 12,
                 face: "Consolas, Malgun Gothic, sans-serif",
                 background: "#1E1E1E",
                 strokeWidth: 0
@@ -404,28 +578,39 @@ function initGraph() {
             enabled: true,
             solver: "forceAtlas2Based",
             forceAtlas2Based: {
-                gravitationalConstant: -160,
-                centralGravity: 0.008,
-                springLength: 240,
-                springConstant: 0.06,
-                avoidOverlap: 0.95
+                gravitationalConstant: -180,
+                centralGravity: 0.01,
+                springLength: 260,
+                springConstant: 0.05,
+                avoidOverlap: 1.0
             },
             stabilization: { iterations: 150 }
         },
         interaction: {
             hover: true,
-            navigationButtons: true,
-            keyboard: true
+            navigationButtons: false, // 모바일 공간 차지를 줄이기 위해 자체 줌버튼 숨김
+            keyboard: true,
+            tooltipDelay: 300
         }
     };
 
     network = new vis.Network(container, data, options);
     updateGraphLevel();
 
+    // 노드 클릭 시 사이드바(또는 바텀시트) 오픈
     network.on("click", function (params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
             renderSidebar(nodeId);
+        } else {
+            closeInfoPanel();
+        }
+    });
+
+    // 드래그 중에는 패널 숨기기 (모바일 뷰 확보)
+    network.on("dragStart", function() {
+        if (window.innerWidth <= 900) {
+            document.getElementById("infoPanel").classList.remove("open");
         }
     });
 
@@ -437,7 +622,7 @@ function updateSummaryStats() {
     const totalFks = rawData.edges.length;
     const brokenFks = rawData.edges.filter(e => !e.is_valid).length;
     document.getElementById("stats-info").innerText =
-        `테이블: ${totalTables}개 | 참조(FK) 연결: ${totalFks}개 (깨진 참조: ${brokenFks}건) | 생성: ${rawData.generated_at}`;
+        `테이블: ${totalTables}개 | 참조: ${totalFks}개 (위반: ${brokenFks}건) | 갱신: ${rawData.generated_at}`;
 }
 
 function updateGraphLevel() {
@@ -462,7 +647,7 @@ function updateGraphLevel() {
     if (toRemove.length > 0) nodesDataset.remove(toRemove);
     nodesDataset.update(updatedNodes);
 
-    // 동일 테이블 간 다중 FK 화살표가 겹치지 않도록 곡률 자동 분산
+    // 동일 테이블 간 다중 FK 화살표 겹침 방지 (곡률 자동 분산)
     const pairCounts = {};
     const pairIndex = {};
     for (const e of rawData.edges) {
@@ -490,7 +675,7 @@ function updateGraphLevel() {
         let smoothOpt = { enabled: true, type: "cubicBezier", forceDirection: "none", roundness: 0.25 };
         if (totalInPair > 1) {
             const dirType = (idxInPair % 2 === 0) ? "curvedCW" : "curvedCCW";
-            const roundVal = 0.18 + Math.floor(idxInPair / 2) * 0.15;
+            const roundVal = 0.2 + Math.floor(idxInPair / 2) * 0.18; // 곡률 폭 확장
             smoothOpt = { enabled: true, type: dirType, roundness: roundVal };
         }
 
@@ -506,11 +691,16 @@ function updateGraphLevel() {
                 hover: e.is_valid ? "#66F0FF" : "#FF7777"
             },
             dashes: !e.is_valid,
-            width: e.is_valid ? 2.2 : 3.2
+            width: e.is_valid ? 2.5 : 3.5 // 선 굵기 증가
         });
     }
     edgesDataset.clear();
     edgesDataset.add(updatedEdges);
+    
+    // 모바일에서 설정 변경 후 옵션창 자동 닫기
+    if (window.innerWidth <= 900) {
+        document.getElementById("optionsPanel").classList.remove("show");
+    }
 }
 
 function renderSidebar(nodeId) {
@@ -535,8 +725,8 @@ function renderSidebar(nodeId) {
         html += `<table class="col-table"><thead><tr><th>구분</th><th>컬럼명</th><th>타입 / 제약조건</th></tr></thead><tbody>`;
         for (const c of node.columns) {
             let keyBadge = "";
-            if (c.is_pk) keyBadge += `<span class="badge-pk">🔑PK</span> `;
-            if (c.is_fk) keyBadge += `<span class="badge-fk">🔗FK</span>`;
+            if (c.is_pk) keyBadge += `<span class="badge-pk">🔑PK</span><br>`;
+            if (c.is_fk) keyBadge += `<span class="badge-fk">🔗FK</span><br>`;
             if (!keyBadge) keyBadge = `<span style="color:#777;">일반</span>`;
 
             let constHtml = "";
@@ -548,17 +738,20 @@ function renderSidebar(nodeId) {
             }
 
             html += `<tr>
-                <td>${keyBadge}</td>
+                <td style="text-align:center;">${keyBadge}</td>
                 <td style="font-weight:bold;color:#FFF;">${escapeXml(c.name)}</td>
                 <td><span class="badge-type">${escapeXml(c.type)}</span>${constHtml}</td>
             </tr>`;
         }
-        html += `</tbody></table>`;
+        html += `</tbody></table><br><br>`;
     } else {
         html += `<div class="meta-badge">컬럼 정보가 없습니다.</div>`;
     }
 
     container.innerHTML = html;
+    
+    // 모바일 환경일 경우 바텀 시트 열기
+    document.getElementById("infoPanel").classList.add("open");
 }
 
 function onSearchTable() {
@@ -569,6 +762,11 @@ function onSearchTable() {
         network.selectNodes([found.id]);
         network.focus(found.id, { scale: 1.15, animation: { duration: 400, easingFunction: "easeInOutQuad" } });
         renderSidebar(found.id);
+        
+        // 검색 후 모바일 옵션창 자동 닫기
+        if (window.innerWidth <= 900) {
+            document.getElementById("optionsPanel").classList.remove("show");
+        }
     }
 }
 
@@ -579,6 +777,9 @@ function togglePhysics() {
 
 function fitNetwork() {
     network.fit({ animation: { duration: 400, easingFunction: "easeInOutQuad" } });
+    if (window.innerWidth <= 900) {
+        document.getElementById("optionsPanel").classList.remove("show");
+    }
 }
 
 window.addEventListener("DOMContentLoaded", initGraph);
