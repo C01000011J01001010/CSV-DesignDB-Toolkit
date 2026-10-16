@@ -397,7 +397,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <div class="main-wrap">
     <div id="network-container"></div>
-    <div class="overlay" id="overlay" onclick="closeInfoPanel()"></div>
+    <div class="overlay" id="overlay" onclick="onOverlayClick(event)"></div>
     <div class="info-panel" id="infoPanel">
         <button class="btn-close-panel" onclick="closeInfoPanel()">X</button>
         <h3>📌 정보 확인</h3>
@@ -424,6 +424,8 @@ const rawData = __GRAPH_JSON__;
 let network = null;
 let nodesDataset = null;
 let edgesDataset = null;
+// 💡 모바일 브라우저의 합성(Ghost) 클릭으로 인해 열리자마자 닫히는 현상을 막기 위한 시각 기록
+let panelOpenedAt = 0;
 
 function escapeXml(unsafe) {
     return String(unsafe)
@@ -438,6 +440,16 @@ function toggleOptions() {
     const p = document.getElementById("optionsPanel");
     if (p.classList.contains("show")) p.classList.remove("show");
     else p.classList.add("show");
+}
+
+function onOverlayClick(e) {
+    // 정보창이 열린 직후 400ms 이내에 들어오는 모바일 합성 click 이벤트는 무시
+    if (Date.now() - panelOpenedAt < 400) {
+        if (e && e.cancelable) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        return;
+    }
+    closeInfoPanel();
 }
 
 function closeInfoPanel() {
@@ -530,13 +542,42 @@ function buildNodeSvg(node, level) {
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
-// 💡 [이동 거리(8px) + 짧은 시간(220ms) 복합 판정 컨트롤러]
-// 1. 손가락이 8px 이상 움직이면 -> 시간(0.1초든 0.5초든)에 상관없이 즉시 '이동(Drag) 모드'로 전환 (절대 정보창 안 열림)
-// 2. 제자리에서 0.22초(220ms) 이상 누르고 있어도 -> '이동(Drag) 모드'로 전환
-// 3. 움직이지 않고(< 8px) 0.22초 안에 톡 치고 뗐을 때만 -> '정보창(Tap)' 오픈
+function findEdgeNearDomPos(domPos, maxRadius) {
+    if (!network) return null;
+    const directHit = network.getEdgeAt(domPos);
+    if (directHit !== undefined && directHit !== null) {
+        return directHit;
+    }
+    const radii = [4, 8, 12, 16, 20, 24, 28];
+    const angleSteps = 12;
+    for (let rIdx = 0; rIdx < radii.length; rIdx++) {
+        const r = radii[rIdx];
+        if (r > maxRadius) break;
+        for (let a = 0; a < angleSteps; a++) {
+            const rad = (a * 2 * Math.PI) / angleSteps;
+            const probePos = {
+                x: domPos.x + Math.cos(rad) * r,
+                y: domPos.y + Math.sin(rad) * r
+            };
+            const nodeAtProbe = network.getNodeAt(probePos);
+            if (nodeAtProbe !== undefined && nodeAtProbe !== null) continue;
+
+            const edgeAtProbe = network.getEdgeAt(probePos);
+            if (edgeAtProbe !== undefined && edgeAtProbe !== null) {
+                return edgeAtProbe;
+            }
+        }
+    }
+    return null;
+}
+
 function setupDirectInputController(container) {
-    const TAP_MAX_MS = 220;
-    const DRAG_PIXEL_THRESHOLD = 8;
+    const NODE_TAP_MAX_MS = 240;
+    const NODE_DRAG_PIXEL_THRESHOLD = 8;
+
+    const EDGE_TAP_MAX_MS = 800;
+    const EDGE_TAP_PIXEL_THRESHOLD = 22;
+    const EDGE_HIT_RADIUS = 28;
 
     let usingTouch = false;
     let isMultiTouch = false;
@@ -544,6 +585,7 @@ function setupDirectInputController(container) {
     let isDragConfirmed = false;
     let pointerDownTime = 0;
     let startDomPos = { x: 0, y: 0 };
+    let lastDomPos = { x: 0, y: 0 };
     let maxMoveDistance = 0;
 
     let activeNodeId = null;
@@ -596,6 +638,7 @@ function setupDirectInputController(container) {
         isDragConfirmed = false;
         pointerDownTime = Date.now();
         startDomPos = domPos;
+        lastDomPos = domPos;
         maxMoveDistance = 0;
 
         const hitNode = network.getNodeAt(domPos);
@@ -613,17 +656,15 @@ function setupDirectInputController(container) {
                 y: nodePos.y - canvasTouch.y
             };
 
-            // 노드를 잡은 동안에는 배경 캔버스가 움직이지 않도록 고정
             network.setOptions({ interaction: { dragView: false } });
             lockNodeForDrag(activeNodeId, true);
 
-            // 0.22초 이상 누르고 있으면 드래그 모드로 확정
             holdTimer = setTimeout(function() {
                 if (isPointerDown && activeNodeId !== null) {
                     isDragConfirmed = true;
                     network.selectNodes([activeNodeId]);
                 }
-            }, TAP_MAX_MS);
+            }, NODE_TAP_MAX_MS);
 
             if (rawEvent && rawEvent.cancelable) {
                 rawEvent.preventDefault();
@@ -631,7 +672,7 @@ function setupDirectInputController(container) {
         } else {
             activeNodeId = null;
             initialNodeCanvasPos = null;
-            const hitEdge = network.getEdgeAt(domPos);
+            const hitEdge = findEdgeNearDomPos(domPos, usingTouch ? EDGE_HIT_RADIUS : 10);
             activeEdgeId = (hitEdge !== undefined && hitEdge !== null) ? hitEdge : null;
         }
     }
@@ -640,13 +681,13 @@ function setupDirectInputController(container) {
         if (!isPointerDown) return;
 
         const domPos = getDomCoords(clientX, clientY);
+        lastDomPos = domPos;
         const dist = Math.hypot(domPos.x - startDomPos.x, domPos.y - startDomPos.y);
         if (dist > maxMoveDistance) {
             maxMoveDistance = dist;
         }
 
-        // 손가락이 8px 이상 움직이는 순간 시간과 무관하게 즉시 드래그(이동)로 확정!
-        if (maxMoveDistance >= DRAG_PIXEL_THRESHOLD) {
+        if (maxMoveDistance >= NODE_DRAG_PIXEL_THRESHOLD) {
             isDragConfirmed = true;
         }
 
@@ -677,8 +718,12 @@ function setupDirectInputController(container) {
             holdTimer = null;
         }
 
+        if (clientX !== undefined && clientY !== undefined) {
+            lastDomPos = getDomCoords(clientX, clientY);
+        }
+
         const elapsed = Date.now() - pointerDownTime;
-        const wasQuickTap = (!isDragConfirmed) && (maxMoveDistance < DRAG_PIXEL_THRESHOLD) && (elapsed < TAP_MAX_MS);
+        const wasNodeQuickTap = (!isDragConfirmed) && (maxMoveDistance < NODE_DRAG_PIXEL_THRESHOLD) && (elapsed < NODE_TAP_MAX_MS);
 
         if (activeNodeId !== null) {
             const targetNode = activeNodeId;
@@ -687,15 +732,16 @@ function setupDirectInputController(container) {
             lockNodeForDrag(targetNode, false);
             network.setOptions({ interaction: { dragView: true } });
 
-            if (wasQuickTap) {
-                // 움직이지 않고(< 8px) 0.22초 이내에 톡 치고 뗐을 때만 정보창 열기
+            if (wasNodeQuickTap) {
+                if (rawEvent && rawEvent.cancelable) {
+                    rawEvent.preventDefault();
+                }
                 if (initialNodeCanvasPos) {
                     network.moveNode(targetNode, initialNodeCanvasPos.x, initialNodeCanvasPos.y);
                 }
                 network.selectNodes([targetNode]);
                 renderSidebar(targetNode);
             } else {
-                // 조금이라도 끌었거나(>= 8px) 0.22초 이상 눌렀다면 무조건 이동만 확정 (정보창 절대 안 열림)
                 try { network.storePositions(); } catch (err) {}
             }
             initialNodeCanvasPos = null;
@@ -703,18 +749,27 @@ function setupDirectInputController(container) {
             return;
         }
 
-        if (activeEdgeId !== null) {
-            const targetEdge = activeEdgeId;
+        const wasEdgeTap = (maxMoveDistance < EDGE_TAP_PIXEL_THRESHOLD) && (elapsed < EDGE_TAP_MAX_MS);
+        if (wasEdgeTap) {
+            const targetEdge = activeEdgeId || findEdgeNearDomPos(lastDomPos, usingTouch ? EDGE_HIT_RADIUS : 10);
             activeEdgeId = null;
-            if (wasQuickTap) {
+            if (targetEdge !== null && targetEdge !== undefined) {
+                // 💡 [핵심 수정] 짧은 터치 시 브라우저가 뒤늦게 발생시키는 합성 click 이벤트를 원천 차단
+                if (rawEvent && rawEvent.cancelable) {
+                    rawEvent.preventDefault();
+                }
                 network.selectEdges([targetEdge]);
                 renderEdgeSidebar(targetEdge);
+                isDragConfirmed = false;
+                return;
             }
-            isDragConfirmed = false;
-            return;
         }
+        activeEdgeId = null;
 
-        if (wasQuickTap) {
+        if (maxMoveDistance < NODE_DRAG_PIXEL_THRESHOLD && elapsed < NODE_TAP_MAX_MS) {
+            if (rawEvent && rawEvent.cancelable) {
+                rawEvent.preventDefault();
+            }
             closeInfoPanel();
         }
         isDragConfirmed = false;
@@ -801,6 +856,7 @@ function initGraph() {
         },
         edges: {
             arrows: { to: { enabled: true, scaleFactor: 1.0 } },
+            selectionWidth: 4,
             smooth: { enabled: true, type: "dynamic" }
         },
         physics: {
@@ -958,6 +1014,7 @@ function renderSidebar(nodeId) {
 
     container.innerHTML = html;
     
+    panelOpenedAt = Date.now();
     document.getElementById("infoPanel").classList.add("open");
     if (window.innerWidth <= 900) {
         document.getElementById("overlay").classList.add("show");
@@ -1002,6 +1059,7 @@ function renderEdgeSidebar(edgeId) {
 
     container.innerHTML = html;
     
+    panelOpenedAt = Date.now();
     document.getElementById("infoPanel").classList.add("open");
     if (window.innerWidth <= 900) {
         document.getElementById("overlay").classList.add("show");
