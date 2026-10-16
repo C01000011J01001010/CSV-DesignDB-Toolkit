@@ -27,7 +27,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
-    /* 모바일 브라우저 주소창 이슈 해결을 위해 100dvh 사용, fallback으로 100vh */
     body {
         background-color: var(--bg-main);
         color: var(--text-main);
@@ -95,6 +94,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         max-height: 50vh;
         overflow-y: auto;
+        position: absolute;
+        top: 48px;
+        left: 0;
+        right: 0;
     }
     .options-panel.show {
         display: flex;
@@ -109,7 +112,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         border-radius: 4px;
         border: 1px solid var(--border-color);
         flex: 1 1 auto;
-        min-width: 200px; /* 너무 좁아지지 않도록 */
+        min-width: 200px;
     }
     .control-group label {
         font-size: 12px;
@@ -129,7 +132,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-size: 13px;
         outline: none;
         flex: 1;
-        min-width: 0; /* flex 컨테이너 안에서 축소 허용 */
+        min-width: 0;
     }
     select:focus, input[type="text"]:focus {
         border-color: var(--accent);
@@ -155,7 +158,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         flex: 1;
         display: flex;
         position: relative;
-        overflow: hidden; /* 영역 밖 잘림 방지 */
+        overflow: hidden;
     }
     #network-container {
         flex: 1;
@@ -165,10 +168,27 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         background-size: 24px 24px;
         outline: none;
     }
+    
+    /* 터치 시 노드 주위에 생기는 기본 파란색 외곽선(하이라이트) 제거 */
+    .vis-network:focus {
+        outline: none;
+    }
 
     /* -----------------------------
        우측 사이드바 (PC 뷰) / 바텀시트 (모바일 뷰)
     ------------------------------ */
+    /* 모바일에서 바텀 시트가 올라올 때 배경을 어둡게 처리하는 오버레이 */
+    .overlay {
+        display: none;
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: rgba(0,0,0,0.5);
+        z-index: 14;
+    }
+    .overlay.show {
+        display: block;
+    }
+
     .info-panel {
         background-color: var(--bg-bar);
         border-left: 1px solid var(--border-color);
@@ -177,7 +197,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         overflow-y: auto;
         padding: 16px;
         z-index: 15;
-        transition: transform 0.3s ease;
+        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
 
     /* PC 기본 상태 (우측 사이드바) */
@@ -186,12 +206,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             width: 400px;
             height: 100%;
         }
-        /* PC에서는 닫기 버튼 숨김 */
         .btn-close-panel { display: none; }
-        
-        .btn-toggle-menu { display: none; } /* PC에선 토글 버튼 숨김 */
+        .btn-toggle-menu { display: none; }
         .options-panel {
-            display: flex; /* PC에선 옵션바 항상 펼침 */
+            position: static;
+            display: flex;
             box-shadow: none;
             max-height: none;
         }
@@ -204,15 +223,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             left: 0;
             right: 0;
             bottom: 0;
-            height: 60vh; /* 화면의 60% 높이 차지 */
+            /* 가로/세로 모드에 따라 유동적인 높이 할당 */
+            max-height: 85%; 
+            height: auto;
+            min-height: 40%;
             border-left: none;
             border-top: 2px solid var(--accent);
             border-radius: 16px 16px 0 0;
             box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
-            transform: translateY(100%); /* 기본적으로 아래로 숨김 */
+            transform: translateY(100%);
         }
         .info-panel.open {
-            transform: translateY(0); /* 호출 시 위로 팝업 */
+            transform: translateY(0);
         }
         .btn-close-panel {
             position: absolute;
@@ -230,6 +252,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: center;
+            z-index: 16;
         }
     }
 
@@ -238,7 +261,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-size: 16px;
         color: var(--pk-color);
         margin-bottom: 8px;
-        padding-right: 36px; /* 닫기 버튼 공간 확보 */
+        padding-right: 36px;
         word-break: break-all;
     }
     .meta-badge {
@@ -309,7 +332,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         justify-content: space-between;
         align-items: center;
         color: #BBBBBB;
-        flex-wrap: wrap; /* 모바일에서 자동 줄바꿈 */
+        flex-wrap: wrap;
         gap: 8px;
         z-index: 10;
     }
@@ -327,17 +350,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
     .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
-    /* 가로 모드 (Landscape) 아주 좁은 세로 높이 대비 */
+    /* 가로 모드 (Landscape) 높이 최적화 */
     @media (max-height: 450px) {
         .top-navbar { height: 36px; min-height: 36px; }
         .status-bar { display: none; } /* 너무 좁으면 하단바 숨김 */
-        .info-panel { height: 85vh; } /* 가로모드 팝업 시 높이 최대화 */
+        /* 가로 모드에서는 옵션창을 절대경로로 띄워서 위를 가리지 않음 */
+        .options-panel { top: 36px; }
     }
 </style>
 </head>
 <body>
 
-<!-- 상단 네비게이션 바 (타이틀 및 토글) -->
 <div class="top-navbar">
     <div class="brand">
         📊 ERD <span class="proj">[__PROJECT_NAME__]</span>
@@ -347,7 +370,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </button>
 </div>
 
-<!-- 접이식 옵션 패널 -->
 <div class="options-panel" id="optionsPanel">
     <div class="control-group">
         <label for="levelSelect">표시 단계:</label>
@@ -384,12 +406,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="btn" onclick="fitNetwork()">🔄 화면 맞춤</button>
 </div>
 
-<!-- 메인 작업 영역 -->
 <div class="main-wrap">
-    <!-- 그래프 캔버스 -->
     <div id="network-container"></div>
     
-    <!-- 우측 패널 / 바텀 시트 -->
+    <!-- 모바일 바텀시트 전용 오버레이 배경 -->
+    <div class="overlay" id="overlay" onclick="closeInfoPanel()"></div>
+    
     <div class="info-panel" id="infoPanel">
         <button class="btn-close-panel" onclick="closeInfoPanel()">X</button>
         <h3>📌 테이블 상세 정보</h3>
@@ -398,7 +420,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
 </div>
 
-<!-- 하단 상태 바 -->
 <div class="status-bar">
     <div class="legend">
         <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상</div>
@@ -427,35 +448,18 @@ function escapeXml(unsafe) {
         .replace(/'/g, "&apos;");
 }
 
-// ⚙️ 상단 모바일 메뉴 토글
 function toggleOptions() {
     const p = document.getElementById("optionsPanel");
     if (p.classList.contains("show")) p.classList.remove("show");
     else p.classList.add("show");
 }
 
-// 📱 바텀 시트 닫기
 function closeInfoPanel() {
     document.getElementById("infoPanel").classList.remove("open");
+    document.getElementById("overlay").classList.remove("show");
     if (network) network.unselectAll();
 }
 
-function buildTooltipText(node) {
-    const lines = [];
-    lines.push(`[${node.label}] (${node.rel_path})`);
-    lines.push(`데이터 행 수: ${node.row_count}행`);
-    if (node.columns && node.columns.length > 0) {
-        lines.push("-------------------------");
-        for (const c of node.columns) {
-            const prefix = c.is_pk ? "🔑PK " : (c.is_fk ? "🔗FK " : "• ");
-            const constStr = (c.constraints && c.constraints.length > 0) ? ` [${c.constraints.join(", ")}]` : "";
-            lines.push(`${prefix}${c.name} (${c.type})${constStr}`);
-        }
-    }
-    return lines.join("\n");
-}
-
-// 노드(테이블) SVG 생성 로직
 function buildNodeSvg(node, level) {
     const rows = [];
     const cols = node.columns || [];
@@ -497,7 +501,6 @@ function buildNodeSvg(node, level) {
         if (lineLen > maxChars) maxChars = lineLen;
     }
 
-    // 모바일 환경을 고려하여 폰트 렌더링 폭을 약간 더 넉넉하게 계산
     const width = Math.max(200, Math.min(640, Math.ceil(maxChars * 8.5) + 36));
     const headerHeight = 38;
     const rowHeight = 24;
@@ -556,7 +559,6 @@ function initGraph() {
     const container = document.getElementById("network-container");
     const data = { nodes: nodesDataset, edges: edgesDataset };
     
-    // 모바일 터치 최적화 옵션 적용
     const options = {
         nodes: {
             shape: "image",
@@ -588,16 +590,16 @@ function initGraph() {
         },
         interaction: {
             hover: true,
-            navigationButtons: false, // 모바일 공간 차지를 줄이기 위해 자체 줌버튼 숨김
+            navigationButtons: false,
             keyboard: true,
-            tooltipDelay: 300
+            // 💡 [수정] 툴팁(하얀 팝업 박스) 표시 기능을 완전히 제거
+            tooltipDelay: 9999999 
         }
     };
 
     network = new vis.Network(container, data, options);
     updateGraphLevel();
 
-    // 노드 클릭 시 사이드바(또는 바텀시트) 오픈
     network.on("click", function (params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
@@ -607,10 +609,9 @@ function initGraph() {
         }
     });
 
-    // 드래그 중에는 패널 숨기기 (모바일 뷰 확보)
     network.on("dragStart", function() {
         if (window.innerWidth <= 900) {
-            document.getElementById("infoPanel").classList.remove("open");
+            closeInfoPanel();
         }
     });
 
@@ -637,7 +638,8 @@ function updateGraphLevel() {
         updatedNodes.push({
             id: n.id,
             image: buildNodeSvg(n, level),
-            title: buildTooltipText(n)
+            // 💡 [수정] title(툴팁 텍스트 속성) 완전 제거
+            title: undefined 
         });
     }
 
@@ -647,7 +649,6 @@ function updateGraphLevel() {
     if (toRemove.length > 0) nodesDataset.remove(toRemove);
     nodesDataset.update(updatedNodes);
 
-    // 동일 테이블 간 다중 FK 화살표 겹침 방지 (곡률 자동 분산)
     const pairCounts = {};
     const pairIndex = {};
     for (const e of rawData.edges) {
@@ -675,7 +676,7 @@ function updateGraphLevel() {
         let smoothOpt = { enabled: true, type: "cubicBezier", forceDirection: "none", roundness: 0.25 };
         if (totalInPair > 1) {
             const dirType = (idxInPair % 2 === 0) ? "curvedCW" : "curvedCCW";
-            const roundVal = 0.2 + Math.floor(idxInPair / 2) * 0.18; // 곡률 폭 확장
+            const roundVal = 0.2 + Math.floor(idxInPair / 2) * 0.18;
             smoothOpt = { enabled: true, type: dirType, roundness: roundVal };
         }
 
@@ -691,13 +692,12 @@ function updateGraphLevel() {
                 hover: e.is_valid ? "#66F0FF" : "#FF7777"
             },
             dashes: !e.is_valid,
-            width: e.is_valid ? 2.5 : 3.5 // 선 굵기 증가
+            width: e.is_valid ? 2.5 : 3.5
         });
     }
     edgesDataset.clear();
     edgesDataset.add(updatedEdges);
     
-    // 모바일에서 설정 변경 후 옵션창 자동 닫기
     if (window.innerWidth <= 900) {
         document.getElementById("optionsPanel").classList.remove("show");
     }
@@ -750,8 +750,11 @@ function renderSidebar(nodeId) {
 
     container.innerHTML = html;
     
-    // 모바일 환경일 경우 바텀 시트 열기
-    document.getElementById("infoPanel").classList.add("open");
+    // 모바일 환경일 경우 바텀 시트 열기 및 배경 어둡게
+    if (window.innerWidth <= 900) {
+        document.getElementById("infoPanel").classList.add("open");
+        document.getElementById("overlay").classList.add("show");
+    }
 }
 
 function onSearchTable() {
@@ -763,7 +766,6 @@ function onSearchTable() {
         network.focus(found.id, { scale: 1.15, animation: { duration: 400, easingFunction: "easeInOutQuad" } });
         renderSidebar(found.id);
         
-        // 검색 후 모바일 옵션창 자동 닫기
         if (window.innerWidth <= 900) {
             document.getElementById("optionsPanel").classList.remove("show");
         }
