@@ -6,7 +6,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<!-- 모바일 화면 크기 및 줌 고정 (100dvh 버그 대비 및 터치 최적화) -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>__PROJECT_NAME__ - CSV DesignDB ERD Viewer</title>
 <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
@@ -38,9 +37,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         height: 100dvh; 
     }
 
-    /* -----------------------------
-       상단 글로벌 툴바 (항상 고정)
-    ------------------------------ */
     .top-navbar {
         background-color: var(--bg-bar);
         border-bottom: 1px solid var(--border-color);
@@ -80,14 +76,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         gap: 6px;
     }
 
-    /* -----------------------------
-       옵션 패널 (기본 숨김, 토글 시 등장)
-    ------------------------------ */
     .options-panel {
         background-color: var(--bg-bar);
         border-bottom: 1px solid var(--border-color);
         padding: 12px 16px;
-        display: none; /* 토글로 제어 */
+        display: none; 
         flex-wrap: wrap;
         gap: 12px;
         z-index: 19;
@@ -151,9 +144,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
     button.btn:active { background-color: var(--accent-hover); }
 
-    /* -----------------------------
-       메인 캔버스 및 레이아웃
-    ------------------------------ */
     .main-wrap {
         flex: 1;
         display: flex;
@@ -169,15 +159,38 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         outline: none;
     }
     
-    /* 터치 시 노드 주위에 생기는 기본 파란색 외곽선(하이라이트) 제거 */
     .vis-network:focus {
         outline: none;
     }
 
-    /* -----------------------------
-       우측 사이드바 (PC 뷰) / 바텀시트 (모바일 뷰)
-    ------------------------------ */
-    /* 모바일에서 바텀 시트가 올라올 때 배경을 어둡게 처리하는 오버레이 */
+    /* 💡 [원상복구] 하단 상태 바 (가로모드에서만 CSS로 숨김) */
+    .status-bar {
+        background-color: var(--bg-input);
+        border-top: 1px solid var(--border-color);
+        padding: 8px 16px;
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #BBBBBB;
+        flex-wrap: wrap;
+        gap: 8px;
+        z-index: 10;
+    }
+    .legend {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
     .overlay {
         display: none;
         position: absolute;
@@ -191,72 +204,48 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     .info-panel {
         background-color: var(--bg-bar);
-        border-left: 1px solid var(--border-color);
+        border-left: none;
         display: flex;
         flex-direction: column;
         overflow-y: auto;
         padding: 16px;
         z-index: 15;
         transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: 80%; 
+        height: auto;
+        min-height: 40%;
+        border-top: 2px solid var(--accent);
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+        transform: translateY(100%);
+    }
+    .info-panel.open {
+        transform: translateY(0);
+    }
+    .btn-close-panel {
+        position: absolute;
+        top: 12px;
+        right: 16px;
+        background: var(--bg-input);
+        border: 1px solid #555;
+        color: #FFF;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 16;
     }
 
-    /* PC 기본 상태 (우측 사이드바) */
-    @media (min-width: 901px) {
-        .info-panel {
-            width: 400px;
-            height: 100%;
-        }
-        .btn-close-panel { display: none; }
-        .btn-toggle-menu { display: none; }
-        .options-panel {
-            position: static;
-            display: flex;
-            box-shadow: none;
-            max-height: none;
-        }
-    }
-
-    /* 모바일/태블릿 상태 (바텀 시트 팝업) */
-    @media (max-width: 900px) {
-        .info-panel {
-            position: absolute;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            /* 가로/세로 모드에 따라 유동적인 높이 할당 */
-            max-height: 85%; 
-            height: auto;
-            min-height: 40%;
-            border-left: none;
-            border-top: 2px solid var(--accent);
-            border-radius: 16px 16px 0 0;
-            box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
-            transform: translateY(100%);
-        }
-        .info-panel.open {
-            transform: translateY(0);
-        }
-        .btn-close-panel {
-            position: absolute;
-            top: 12px;
-            right: 16px;
-            background: var(--bg-input);
-            border: 1px solid #555;
-            color: #FFF;
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 16;
-        }
-    }
-
-    /* 패널 내부 컨텐츠 디자인 */
     .info-panel h3 {
         font-size: 16px;
         color: var(--pk-color);
@@ -320,42 +309,29 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         font-size: 12px;
     }
 
-    /* -----------------------------
-       하단 상태바 (범례 및 통계)
-    ------------------------------ */
-    .status-bar {
-        background-color: var(--bg-input);
-        border-top: 1px solid var(--border-color);
-        padding: 8px 16px;
-        font-size: 11px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        color: #BBBBBB;
-        flex-wrap: wrap;
-        gap: 8px;
-        z-index: 10;
+    @media (min-width: 901px) {
+        .options-panel { position: static; box-shadow: none; display: flex; }
+        .btn-toggle-menu { display: none; }
+        .info-panel {
+            width: 450px;
+            left: auto;
+            right: 16px;
+            bottom: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            max-height: 85%;
+            transform: translateY(0); /* PC에선 트랜지션 없이 항상 띄울 준비 */
+            display: none; /* 내용 없으면 아예 숨김 */
+        }
+        .info-panel.open { display: flex; }
     }
-    .legend {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        white-space: nowrap;
-    }
-    .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
-    /* 가로 모드 (Landscape) 높이 최적화 */
+    /* 💡 가로 모드 (높이가 좁을 때 하단 바 숨김 처리) */
     @media (max-height: 450px) {
         .top-navbar { height: 36px; min-height: 36px; }
-        .status-bar { display: none; } /* 너무 좁으면 하단바 숨김 */
-        /* 가로 모드에서는 옵션창을 절대경로로 띄워서 위를 가리지 않음 */
+        .status-bar { display: none; }
         .options-panel { top: 36px; }
+        .info-panel { max-height: 95%; }
     }
 </style>
 </head>
@@ -389,11 +365,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
 
     <div class="control-group">
-        <input type="checkbox" id="chkEdgeLabel" checked onchange="updateGraphLevel()">
-        <label for="chkEdgeLabel">화살표(FK) 라벨</label>
-    </div>
-
-    <div class="control-group">
         <input type="checkbox" id="chkHideIsolated" onchange="updateGraphLevel()">
         <label for="chkHideIsolated">고립 노드 숨김</label>
     </div>
@@ -408,21 +379,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <div class="main-wrap">
     <div id="network-container"></div>
-    
-    <!-- 모바일 바텀시트 전용 오버레이 배경 -->
     <div class="overlay" id="overlay" onclick="closeInfoPanel()"></div>
-    
     <div class="info-panel" id="infoPanel">
         <button class="btn-close-panel" onclick="closeInfoPanel()">X</button>
-        <h3>📌 테이블 상세 정보</h3>
-        <div class="meta-badge">그래프에서 테이블 노드를 클릭하면 상세 스키마와 무결성 검증 결과를 확인할 수 있습니다.</div>
+        <h3>📌 정보 확인</h3>
+        <div class="meta-badge"><span id="sb-path">노드나 화살표를 선택해주세요.</span><br><span id="sb-rows"></span></div>
         <div id="sidebar-content"></div>
     </div>
 </div>
 
+<!-- 💡 [원상복구] 하단 UI 원위치 -->
 <div class="status-bar">
     <div class="legend">
-        <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상</div>
+        <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상 테이블</div>
         <div class="legend-item"><span class="dot" style="background:#DC3545;"></span> 위반/유령</div>
         <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑</span> PK</div>
         <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗</span> FK</div>
@@ -567,13 +536,7 @@ function initGraph() {
         },
         edges: {
             arrows: { to: { enabled: true, scaleFactor: 1.0 } },
-            font: {
-                color: "#E0E0E0",
-                size: 12,
-                face: "Consolas, Malgun Gothic, sans-serif",
-                background: "#1E1E1E",
-                strokeWidth: 0
-            },
+            // 💡 [요구사항 3] 화살표에 렌더링되던 지저분한 라벨 설정 완전 제거
             smooth: { enabled: true, type: "dynamic" }
         },
         physics: {
@@ -592,7 +555,6 @@ function initGraph() {
             hover: true,
             navigationButtons: false,
             keyboard: true,
-            // 💡 [수정] 툴팁(하얀 팝업 박스) 표시 기능을 완전히 제거
             tooltipDelay: 9999999 
         }
     };
@@ -600,17 +562,16 @@ function initGraph() {
     network = new vis.Network(container, data, options);
     updateGraphLevel();
 
+    // 💡 [요구사항 2] 터치 오작동 원인 제거: 
+    // 임의로 넣었던 dragStart 창 닫기 로직을 완전히 삭제하여 순정 터치/드래그 충돌을 해결.
+    // vis.js 기본 특성상 '짧은 터치 후 뗄 때' click 이벤트가 발생하며, 드래그 무브 시에는 click이 발생하지 않습니다.
     network.on("click", function (params) {
         if (params.nodes.length > 0) {
-            const nodeId = params.nodes[0];
-            renderSidebar(nodeId);
+            renderSidebar(params.nodes[0]);
+        } else if (params.edges.length > 0) {
+            // 💡 [요구사항 3] 화살표(선)를 짧게 터치(클릭)했을 때 참조 정보 UI를 띄움
+            renderEdgeSidebar(params.edges[0]);
         } else {
-            closeInfoPanel();
-        }
-    });
-
-    network.on("dragStart", function() {
-        if (window.innerWidth <= 900) {
             closeInfoPanel();
         }
     });
@@ -623,13 +584,12 @@ function updateSummaryStats() {
     const totalFks = rawData.edges.length;
     const brokenFks = rawData.edges.filter(e => !e.is_valid).length;
     document.getElementById("stats-info").innerText =
-        `테이블: ${totalTables}개 | 참조: ${totalFks}개 (위반: ${brokenFks}건) | 갱신: ${rawData.generated_at}`;
+        `테이블: ${totalTables}개 | 참조(FK) 연결: ${totalFks}개 (위반: ${brokenFks}건) | 갱신: ${rawData.generated_at}`;
 }
 
 function updateGraphLevel() {
     if (!nodesDataset || !edgesDataset) return;
     const level = parseInt(document.getElementById("levelSelect").value, 10);
-    const showEdgeLabel = document.getElementById("chkEdgeLabel").checked;
     const hideIsolated = document.getElementById("chkHideIsolated").checked;
 
     const updatedNodes = [];
@@ -638,7 +598,6 @@ function updateGraphLevel() {
         updatedNodes.push({
             id: n.id,
             image: buildNodeSvg(n, level),
-            // 💡 [수정] title(툴팁 텍스트 속성) 완전 제거
             title: undefined 
         });
     }
@@ -660,13 +619,6 @@ function updateGraphLevel() {
     const updatedEdges = [];
     for (const e of rawData.edges) {
         if (!currentIds.has(e.from) || !currentIds.has(e.to)) continue;
-        const mapStr = `${e.local_cols.join(", ")} ➔ ${e.target_cols.length ? e.target_cols.join(", ") : "?"}`;
-        let labelStr = "";
-        if (showEdgeLabel) {
-            labelStr = e.is_valid
-                ? `[${e.fk_name}]\n${mapStr}`
-                : `❌ [${e.fk_name}] ${e.error_msg}\n(${mapStr})`;
-        }
 
         const key = [e.from, e.to].sort().join("::");
         const totalInPair = pairCounts[key] || 1;
@@ -684,7 +636,8 @@ function updateGraphLevel() {
             id: e.id,
             from: e.from,
             to: e.to,
-            label: labelStr,
+            // 💡 [요구사항 3] 화살표 텍스트 라벨 무조건 제거
+            label: undefined,
             smooth: smoothOpt,
             color: {
                 color: e.is_valid ? "#00E5FF" : "#FF4444",
@@ -697,26 +650,26 @@ function updateGraphLevel() {
     }
     edgesDataset.clear();
     edgesDataset.add(updatedEdges);
-    
-    if (window.innerWidth <= 900) {
-        document.getElementById("optionsPanel").classList.remove("show");
-    }
 }
 
 function renderSidebar(nodeId) {
     const node = rawData.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    const container = document.getElementById("sidebar-content");
-    let html = `<div class="section-title">📂 파일 정보</div>`;
-    html += `<div class="meta-badge">테이블: <b style="color:#FFF;">${escapeXml(node.label)}</b><br>상대 경로: ${escapeXml(node.rel_path)}<br>데이터 행 수: ${node.row_count}행</div>`;
+    document.querySelector('.info-panel h3').innerHTML = `📌 ${escapeXml(node.label)}`;
+    document.getElementById('sb-path').innerHTML = `상대 경로: ${escapeXml(node.rel_path)}`;
+    document.getElementById('sb-rows').innerHTML = `데이터: ${node.row_count}행`;
 
-    html += `<div class="section-title">🛡️ 무결성 검증 상태</div>`;
+    const container = document.getElementById("sidebar-content");
+    let html = "";
+
     if (node.errors && node.errors.length > 0) {
+        html += `<div class="section-title">🛡️ 무결성 위반 사항</div>`;
         for (const err of node.errors) {
             html += `<div class="err-box">❌ ${escapeXml(err)}</div>`;
         }
     } else {
+        html += `<div class="section-title">🛡️ 무결성 검증 상태</div>`;
         html += `<div class="ok-box">✅ 무결성 위반 사항이 없습니다.</div>`;
     }
 
@@ -750,9 +703,53 @@ function renderSidebar(nodeId) {
 
     container.innerHTML = html;
     
-    // 모바일 환경일 경우 바텀 시트 열기 및 배경 어둡게
+    document.getElementById("infoPanel").classList.add("open");
     if (window.innerWidth <= 900) {
-        document.getElementById("infoPanel").classList.add("open");
+        document.getElementById("overlay").classList.add("show");
+    }
+}
+
+// 💡 [요구사항 3] 화살표(Edge) 터치 시 띄워줄 새로운 참조 정보 UI 함수
+function renderEdgeSidebar(edgeId) {
+    const edge = rawData.edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    document.querySelector('.info-panel h3').innerHTML = `🔗 참조 무결성 연결 (FK)`;
+    document.getElementById('sb-path').innerHTML = `<span style="color:#00E5FF;">${escapeXml(edge.from)}</span> ➔ <span style="color:#FFD700;">${escapeXml(edge.to)}</span>`;
+    document.getElementById('sb-rows').innerHTML = `외래키 객체명: <b>[${escapeXml(edge.fk_name)}]</b>`;
+
+    const container = document.getElementById("sidebar-content");
+    let html = "";
+
+    if (edge.is_valid) {
+        html += `<div class="section-title">🛡️ 검증 상태</div>`;
+        html += `<div class="ok-box">✅ 정상적인 참조(FK) 연결입니다.</div>`;
+    } else {
+        html += `<div class="section-title">🛡️ 무결성 위반 사항</div>`;
+        html += `<div class="err-box">❌ ${escapeXml(edge.error_msg)}</div>`;
+    }
+
+    html += `<div class="section-title">📋 매핑 상세정보</div>`;
+    html += `<table class="col-table"><thead><tr>
+                <th>로컬 컬럼<br><span style="font-size:10px;font-weight:normal;color:#AAA;">(${escapeXml(edge.from)})</span></th>
+                <th>타겟 PK<br><span style="font-size:10px;font-weight:normal;color:#AAA;">(${escapeXml(edge.to)})</span></th>
+             </tr></thead><tbody>`;
+    
+    const maxLen = Math.max(edge.local_cols.length, edge.target_cols.length);
+    for(let i=0; i<maxLen; i++) {
+        const lCol = edge.local_cols[i] || "? (누락)";
+        const tCol = edge.target_cols[i] || "? (누락)";
+        html += `<tr>
+            <td style="font-weight:bold;color:#00FF66;">${escapeXml(lCol)}</td>
+            <td style="font-weight:bold;color:#FFD700;">${escapeXml(tCol)}</td>
+        </tr>`;
+    }
+    html += `</tbody></table><br><br>`;
+
+    container.innerHTML = html;
+    
+    document.getElementById("infoPanel").classList.add("open");
+    if (window.innerWidth <= 900) {
         document.getElementById("overlay").classList.add("show");
     }
 }
