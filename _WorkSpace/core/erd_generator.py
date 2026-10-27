@@ -410,6 +410,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="legend">
         <div class="legend-item"><span class="dot" style="background:#007ACC;"></span> 정상 테이블</div>
         <div class="legend-item"><span class="dot" style="background:#DC3545;"></span> 위반/유령</div>
+        <div class="legend-item"><span class="dot" style="background:transparent;border:2px solid #FFD700;"></span> 선택됨(강조)</div>
         <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑</span> PK</div>
         <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗</span> FK</div>
         <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">━━▶</span> 정상참조</div>
@@ -424,8 +425,9 @@ const rawData = __GRAPH_JSON__;
 let network = null;
 let nodesDataset = null;
 let edgesDataset = null;
-// 💡 모바일 브라우저의 합성(Ghost) 클릭으로 인해 열리자마자 닫히는 현상을 막기 위한 시각 기록
 let panelOpenedAt = 0;
+// 💡 현재 선택되어 테두리가 하이라이트된 테이블 노드 ID 추적
+let selectedNodeId = null;
 
 function escapeXml(unsafe) {
     return String(unsafe)
@@ -443,13 +445,46 @@ function toggleOptions() {
 }
 
 function onOverlayClick(e) {
-    // 정보창이 열린 직후 400ms 이내에 들어오는 모바일 합성 click 이벤트는 무시
     if (Date.now() - panelOpenedAt < 400) {
         if (e && e.cancelable) e.preventDefault();
         if (e && e.stopPropagation) e.stopPropagation();
         return;
     }
     closeInfoPanel();
+}
+
+// 💡 테이블 선택 상태에 따라 SVG 테두리 하이라이트를 즉시 갱신하는 함수
+function setSelectedNodeHighlight(nextNodeId) {
+    if (!nodesDataset) {
+        selectedNodeId = nextNodeId;
+        return;
+    }
+    const level = parseInt(document.getElementById("levelSelect").value, 10);
+    const prevNodeId = selectedNodeId;
+    selectedNodeId = nextNodeId;
+
+    const updates = [];
+    if (prevNodeId && prevNodeId !== nextNodeId && nodesDataset.get(prevNodeId)) {
+        const prevNodeData = rawData.nodes.find(n => n.id === prevNodeId);
+        if (prevNodeData) {
+            updates.push({
+                id: prevNodeId,
+                image: buildNodeSvg(prevNodeData, level, false)
+            });
+        }
+    }
+    if (nextNodeId && nodesDataset.get(nextNodeId)) {
+        const nextNodeData = rawData.nodes.find(n => n.id === nextNodeId);
+        if (nextNodeData) {
+            updates.push({
+                id: nextNodeId,
+                image: buildNodeSvg(nextNodeData, level, true)
+            });
+        }
+    }
+    if (updates.length > 0) {
+        nodesDataset.update(updates);
+    }
 }
 
 function closeInfoPanel() {
@@ -460,10 +495,11 @@ function closeInfoPanel() {
 
     document.getElementById("infoPanel").classList.remove("open");
     document.getElementById("overlay").classList.remove("show");
+    setSelectedNodeHighlight(null);
     if (network) network.unselectAll();
 }
 
-function buildNodeSvg(node, level) {
+function buildNodeSvg(node, level, isSelected = false) {
     const rows = [];
     const cols = node.columns || [];
 
@@ -511,12 +547,14 @@ function buildNodeSvg(node, level) {
     const height = headerHeight + bodyHeight;
 
     const headerBg = node.is_missing_target ? "#8B0000" : (node.has_error ? "#C9302C" : "#007ACC");
-    const borderCol = node.has_error ? "#FF4444" : "#3E3E42";
-    const borderWidth = node.has_error ? 3 : 2;
+    const borderCol = isSelected ? "#FFD700" : (node.has_error ? "#FF4444" : "#3E3E42");
+    const borderWidth = isSelected ? 4.5 : (node.has_error ? 3 : 2);
 
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
-    svg += `<rect x="1" y="1" width="${width-2}" height="${height-2}" rx="8" ry="8" fill="#252526" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
-    svg += `<path d="M 1 9 Q 1 1 9 1 L ${width-9} 1 Q ${width-1} 1 ${width-1} 9 L ${width-1} ${headerHeight} L 1 ${headerHeight} Z" fill="${headerBg}"/>`;
+    // 헤더 배경을 먼저 그리고 그 위에 외곽 테두리(rect fill="none")를 덮어씌워 상단 모서리까지 테두리가 선명하게 보이도록 처리
+    svg += `<rect x="2" y="2" width="${width-4}" height="${height-4}" rx="8" ry="8" fill="#252526"/>`;
+    svg += `<path d="M 2 10 Q 2 2 10 2 L ${width-10} 2 Q ${width-2} 2 ${width-2} 10 L ${width-2} ${headerHeight} L 2 ${headerHeight} Z" fill="${headerBg}"/>`;
+    svg += `<rect x="2" y="2" width="${width-4}" height="${height-4}" rx="8" ry="8" fill="none" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
     svg += `<text x="14" y="24" fill="#FFFFFF" font-family="Consolas, Malgun Gothic, sans-serif" font-size="14" font-weight="bold">${escapeXml(titleText)}</text>`;
 
     let y = headerHeight + 22;
@@ -662,7 +700,6 @@ function setupDirectInputController(container) {
             holdTimer = setTimeout(function() {
                 if (isPointerDown && activeNodeId !== null) {
                     isDragConfirmed = true;
-                    network.selectNodes([activeNodeId]);
                 }
             }, NODE_TAP_MAX_MS);
 
@@ -754,7 +791,6 @@ function setupDirectInputController(container) {
             const targetEdge = activeEdgeId || findEdgeNearDomPos(lastDomPos, usingTouch ? EDGE_HIT_RADIUS : 10);
             activeEdgeId = null;
             if (targetEdge !== null && targetEdge !== undefined) {
-                // 💡 [핵심 수정] 짧은 터치 시 브라우저가 뒤늦게 발생시키는 합성 click 이벤트를 원천 차단
                 if (rawEvent && rawEvent.cancelable) {
                     rawEvent.preventDefault();
                 }
@@ -852,7 +888,7 @@ function initGraph() {
         nodes: {
             shape: "image",
             shapeProperties: { useImageSize: true },
-            chosen: true
+            chosen: false
         },
         edges: {
             arrows: { to: { enabled: true, scaleFactor: 1.0 } },
@@ -876,6 +912,8 @@ function initGraph() {
             dragView: true,
             zoomView: true,
             hover: false,
+            // 💡 테이블 선택 시 연결된 화살표가 노란색으로 함께 바뀌어 헷갈리던 현상 차단
+            selectConnectedEdges: false,
             navigationButtons: false,
             keyboard: true
         }
@@ -905,7 +943,7 @@ function updateGraphLevel() {
         if (hideIsolated && n.is_isolated) continue;
         updatedNodes.push({
             id: n.id,
-            image: buildNodeSvg(n, level),
+            image: buildNodeSvg(n, level, n.id === selectedNodeId),
             title: undefined 
         });
     }
@@ -967,6 +1005,9 @@ function renderSidebar(nodeId) {
     const node = rawData.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
+    // 💡 선택한 테이블 테두리 하이라이트 적용
+    setSelectedNodeHighlight(nodeId);
+
     document.querySelector('.info-panel h3').innerHTML = `📌 ${escapeXml(node.label)}`;
     document.getElementById('sb-path').innerHTML = `상대 경로: ${escapeXml(node.rel_path)}`;
     document.getElementById('sb-rows').innerHTML = `데이터: ${node.row_count}행`;
@@ -1024,6 +1065,9 @@ function renderSidebar(nodeId) {
 function renderEdgeSidebar(edgeId) {
     const edge = rawData.edges.find(e => e.id === edgeId);
     if (!edge) return;
+
+    // 💡 화살표 선택 시 테이블 테두리 하이라이트 해제
+    setSelectedNodeHighlight(null);
 
     document.querySelector('.info-panel h3').innerHTML = `🔗 참조 무결성 연결 (FK)`;
     document.getElementById('sb-path').innerHTML = `<span style="color:#00E5FF;">${escapeXml(edge.from)}</span> ➔ <span style="color:#FFD700;">${escapeXml(edge.to)}</span>`;
