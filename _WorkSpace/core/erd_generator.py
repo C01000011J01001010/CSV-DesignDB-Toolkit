@@ -426,8 +426,9 @@ let network = null;
 let nodesDataset = null;
 let edgesDataset = null;
 let panelOpenedAt = 0;
-// 💡 현재 선택되어 테두리가 하이라이트된 테이블 노드 ID 추적
+// 💡 현재 선택된 테이블(Node) 및 참조 화살표(Edge) ID를 모두 추적
 let selectedNodeId = null;
+let selectedEdgeId = null;
 
 function escapeXml(unsafe) {
     return String(unsafe)
@@ -453,7 +454,6 @@ function onOverlayClick(e) {
     closeInfoPanel();
 }
 
-// 💡 테이블 선택 상태에 따라 SVG 테두리 하이라이트를 즉시 갱신하는 함수
 function setSelectedNodeHighlight(nextNodeId) {
     if (!nodesDataset) {
         selectedNodeId = nextNodeId;
@@ -495,6 +495,7 @@ function closeInfoPanel() {
 
     document.getElementById("infoPanel").classList.remove("open");
     document.getElementById("overlay").classList.remove("show");
+    selectedEdgeId = null;
     setSelectedNodeHighlight(null);
     if (network) network.unselectAll();
 }
@@ -551,7 +552,6 @@ function buildNodeSvg(node, level, isSelected = false) {
     const borderWidth = isSelected ? 4.5 : (node.has_error ? 3 : 2);
 
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
-    // 헤더 배경을 먼저 그리고 그 위에 외곽 테두리(rect fill="none")를 덮어씌워 상단 모서리까지 테두리가 선명하게 보이도록 처리
     svg += `<rect x="2" y="2" width="${width-4}" height="${height-4}" rx="8" ry="8" fill="#252526"/>`;
     svg += `<path d="M 2 10 Q 2 2 10 2 L ${width-10} 2 Q ${width-2} 2 ${width-2} 10 L ${width-2} ${headerHeight} L 2 ${headerHeight} Z" fill="${headerBg}"/>`;
     svg += `<rect x="2" y="2" width="${width-4}" height="${height-4}" rx="8" ry="8" fill="none" stroke="${borderCol}" stroke-width="${borderWidth}"/>`;
@@ -912,7 +912,6 @@ function initGraph() {
             dragView: true,
             zoomView: true,
             hover: false,
-            // 💡 테이블 선택 시 연결된 화살표가 노란색으로 함께 바뀌어 헷갈리던 현상 차단
             selectConnectedEdges: false,
             navigationButtons: false,
             keyboard: true
@@ -993,8 +992,30 @@ function updateGraphLevel() {
             width: e.is_valid ? 2.5 : 3.5
         });
     }
-    edgesDataset.clear();
-    edgesDataset.add(updatedEdges);
+
+    // 💡 edgesDataset.clear() 대신 부분 업데이트를 사용하여 선택 상태 증발 방지
+    const currentEdgeIds = new Set(updatedEdges.map(e => e.id));
+    const existingEdgeIds = edgesDataset.getIds();
+    const edgesToRemove = existingEdgeIds.filter(id => !currentEdgeIds.has(id));
+    if (edgesToRemove.length > 0) edgesDataset.remove(edgesToRemove);
+    edgesDataset.update(updatedEdges);
+
+    // 💡 표시 단계 변경 후에도 참조 화살표(또는 테이블) 하이라이트 선택 상태를 그대로 복원
+    if (network) {
+        if (selectedEdgeId) {
+            if (edgesDataset.get(selectedEdgeId)) {
+                network.selectEdges([selectedEdgeId]);
+            } else {
+                closeInfoPanel();
+            }
+        } else if (selectedNodeId) {
+            if (nodesDataset.get(selectedNodeId)) {
+                network.selectNodes([selectedNodeId]);
+            } else {
+                closeInfoPanel();
+            }
+        }
+    }
     
     if (window.innerWidth <= 900) {
         document.getElementById("optionsPanel").classList.remove("show");
@@ -1005,7 +1026,7 @@ function renderSidebar(nodeId) {
     const node = rawData.nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    // 💡 선택한 테이블 테두리 하이라이트 적용
+    selectedEdgeId = null;
     setSelectedNodeHighlight(nodeId);
 
     document.querySelector('.info-panel h3').innerHTML = `📌 ${escapeXml(node.label)}`;
@@ -1066,7 +1087,8 @@ function renderEdgeSidebar(edgeId) {
     const edge = rawData.edges.find(e => e.id === edgeId);
     if (!edge) return;
 
-    // 💡 화살표 선택 시 테이블 테두리 하이라이트 해제
+    // 💡 현재 선택된 화살표 ID를 저장하고 테이블 테두리 하이라이트 해제
+    selectedEdgeId = edgeId;
     setSelectedNodeHighlight(null);
 
     document.querySelector('.info-panel h3').innerHTML = `🔗 참조 무결성 연결 (FK)`;
