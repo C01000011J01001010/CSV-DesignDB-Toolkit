@@ -278,6 +278,26 @@ class LeftPanel(tk.Frame):
             self.t1_combo_files.set('')
             self.app.right_panel.log("작업 경로 내에 발견된 엑셀 파일이 없습니다.")
 
+
+    def _t1_open_excel(self):
+        rel_path = self.t1_combo_files.get()
+        if not rel_path or not self.app.workspace_root:
+            messagebox.showwarning("안내", "먼저 대상 엑셀 파일을 선택해주세요.")
+            return
+        filepath = os.path.join(self.app.target_dir, rel_path)
+        if os.path.exists(filepath):
+            try:
+                os.startfile(filepath)
+            except AttributeError:
+                import subprocess, sys
+                if sys.platform == "darwin":
+                    subprocess.call(["open", filepath])
+                else:
+                    subprocess.call(["xdg-open", filepath])
+            self.app.right_panel.log(f"📝 엑셀 파일을 열었습니다: {rel_path}")
+        else:
+            messagebox.showerror("오류", f"파일을 찾을 수 없습니다:\n{filepath}")
+
     def _t1_load_headers(self):
         rel_path = self.t1_combo_files.get()
         if not rel_path or not self.app.workspace_root: return
