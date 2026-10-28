@@ -1,17 +1,27 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import os
 import threading
 from gui.widgets import ScrollableFrame
 from gui.constraint_builder import ColumnConstraintBuilder
 from gui.meta_editor import MetaEditorTab
 from core.excel_editor import get_excel_files, read_headers, write_headers
+from core.registry_manager import (
+    scan_available_registries,
+    parse_regimeta_file,
+    load_csvregi,
+    save_csvregi,
+    get_csvregi_path,
+)
 
 class LeftPanel(tk.Frame):
     def __init__(self, parent, app, *args, **kwargs):
         super().__init__(parent, bg="#1E1E1E", *args, **kwargs)
         self.app = app
         self.parsed_headers = []
+        self.available_registries = []
+        self.regi_label_map = {}
+        self.current_regi_bindings = {}
 
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
@@ -70,7 +80,10 @@ class LeftPanel(tk.Frame):
 
         guide_frame = tk.Frame(self.tab1, bg="#252526", bd=1, relief="solid")
         guide_frame.pack(fill="x", padx=10, pady=(0, 5))
-        guide_text = "📌 [안내] `{}` 기호가 포함된 최초의 행/열부터 마지막 `{}` 열까지만 스키마와 데이터로 인식합니다. (바깥 여백 및 메모 무시)"
+        guide_text = (
+            "📌 [안내] `{}` 기호가 포함된 최초의 행/열부터 마지막 `{}` 열까지만 스키마와 데이터로 인식합니다. (바깥 여백 및 메모 무시)\n"
+            "🎨 `AssetID` 또는 `AssetID[]` 타입 선택 시 대상 유니티 레지스트리(.regimeta)를 연결하면 `.csvregi` 파일로 자동 관리됩니다."
+        )
         tk.Label(guide_frame, text=guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=5).pack(fill="x")
 
         self.sub_notebook = ttk.Notebook(self.tab1)
@@ -96,8 +109,10 @@ class LeftPanel(tk.Frame):
         btn_frame = tk.Frame(self.t1_1_inner, bg="#1E1E1E")
         btn_frame.pack(fill="x", padx=10, pady=5)
         
-        tk.Button(btn_frame, text="+ 새 컬럼 추가", font=("맑은 고딕", 10), bg="#444444", fg="white", bd=0, command=self._t1_1_add_row).pack(side="left")
-        tk.Button(btn_frame, text="✅ 엑셀에 스키마(타입) 저장", font=("맑은 고딕", 10, "bold"), bg="#28A745", fg="white", bd=0, command=self._t1_1_save_headers).pack(side="right")
+        tk.Button(btn_frame, text="+ 새 컬럼 추가", font=("맑은 고딕", 9, "bold"), bg="#444444", fg="white", bd=0, padx=8, pady=4, command=self._t1_1_add_row).pack(side="left", padx=(0, 5))
+        tk.Button(btn_frame, text="🔄 레지스트리 재스캔", font=("맑은 고딕", 9), bg="#3A3D41", fg="#00E5FF", bd=0, padx=8, pady=4, command=lambda: self._refresh_available_registries(silent=False)).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="📂 외부 .regimeta 직접 추가", font=("맑은 고딕", 9), bg="#3A3D41", fg="#FFD700", bd=0, padx=8, pady=4, command=self._add_external_regimeta_dialog).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="✅ 엑셀에 스키마(타입) 및 .csvregi 저장", font=("맑은 고딕", 10, "bold"), bg="#28A745", fg="white", bd=0, padx=12, pady=4, command=self._t1_1_save_headers).pack(side="right")
 
     def _build_sub_tab2(self):
         sf = ScrollableFrame(self.sub_tab2)
@@ -111,7 +126,84 @@ class LeftPanel(tk.Frame):
         btn_frame = tk.Frame(self.t1_2_inner, bg="#1E1E1E")
         btn_frame.pack(fill="x", padx=10, pady=5)
         
-        tk.Button(btn_frame, text="✅ 엑셀에 제약조건 적용 및 저장", font=("맑은 고딕", 10, "bold"), bg="#E67E22", fg="white", bd=0, command=self._t1_2_save_headers).pack(side="right")
+        tk.Button(btn_frame, text="✅ 엑셀에 제약조건 적용 및 저장", font=("맑은 고딕", 10, "bold"), bg="#E67E22", fg="white", bd=0, padx=12, pady=4, command=self._t1_2_save_headers).pack(side="right")
+
+    def _refresh_available_registries(self, silent=True):
+        if not self.app.workspace_root:
+            self.available_registries = []
+            self.regi_label_map = {}
+            return
+
+        prefix = self.app.exclude_prefix_var.get().strip() or "Disabled"
+        extra_paths = getattr(self.app, "external_regimeta_paths", [])
+        self.available_registries = scan_available_registries(
+            self.app.workspace_root,
+            exclude_prefix=prefix,
+            extra_paths=extra_paths
+        )
+        self.regi_label_map = {r["displayLabel"]: r for r in self.available_registries}
+
+        # 이미 렌더링된 행들이 있다면 드롭다운 목록 갱신
+        for item in self.t1_1_row_widgets:
+            self._update_row_registry_widget_state(item, preserve_selection=True)
+
+        if not silent:
+            self.app.right_panel.log(f"🎨 에셋 레지스트리(.regimeta) {len(self.available_registries)}개 스캔 완료.")
+
+    def _add_external_regimeta_dialog(self):
+        if not self.app.workspace_root:
+            messagebox.showwarning("안내", "먼저 워크스페이스를 설정해주세요.")
+            return
+
+        selected_file = filedialog.askopenfilename(
+            title="연결할 유니티 .regimeta 파일 선택",
+            initialdir=self.app.workspace_root,
+            filetypes=[("Registry Meta (.regimeta)", ".regimeta"), ("모든 파일 (*.*)", "*.*")]
+        )
+        if not selected_file:
+            return
+
+        info = parse_regimeta_file(selected_file, self.app.workspace_root)
+        if not info:
+            messagebox.showerror("오류", "유효한 .regimeta JSON 파일이 아닙니다.")
+            return
+
+        if not hasattr(self.app, "external_regimeta_paths"):
+            self.app.external_regimeta_paths = []
+
+        abs_selected = os.path.abspath(selected_file).replace("\\", "/")
+        if abs_selected not in self.app.external_regimeta_paths:
+            self.app.external_regimeta_paths.append(abs_selected)
+            self.app.save_workspace_config()
+
+        self._refresh_available_registries(silent=True)
+        self.app.right_panel.log(f"✅ 외부 레지스트리 등록 완료: {info['displayLabel']} ({info['regiMetaPath']})")
+
+    def _find_matching_registry_for_binding(self, bound_info):
+        """저장된 .csvregi 바인딩 정보와 일치하는 스캔된 레지스트리 객체를 찾습니다."""
+        if not bound_info or not isinstance(bound_info, dict):
+            return None
+
+        target_guid = str(bound_info.get("registrySoGuid", "")).strip()
+        target_path = str(bound_info.get("regiMetaPath", "")).strip().replace("\\", "/")
+        target_name = str(bound_info.get("registryName", "")).strip()
+
+        if target_guid:
+            for r in self.available_registries:
+                if r["registrySoGuid"] == target_guid:
+                    return r
+
+        if target_path:
+            for r in self.available_registries:
+                if r["regiMetaPath"] == target_path or r["metaAbsPath"] == target_path:
+                    return r
+
+        if target_name:
+            for r in self.available_registries:
+                if r["registryName"] == target_name:
+                    return r
+
+        return None
 
     def _t1_refresh_files(self):
         if not self.app.workspace_root:
@@ -160,34 +252,151 @@ class LeftPanel(tk.Frame):
             c_name, c_type, constraints = self._parse_raw_header(h)
             constraints = [c for c in constraints if c.upper() not in ['PK', 'PRIMARYKEY', 'REF', 'REFERENCE']]
             self.parsed_headers.append({'name': c_name, 'type': c_type, 'constraints': constraints})
+
+        # 대응하는 .csvregi 파일 로드 및 레지스트리 목록 최신화
+        regi_data = load_csvregi(filepath)
+        self.current_regi_bindings = regi_data.get("bindings", {})
+        self._refresh_available_registries(silent=True)
             
         self._render_tab1_1()
         self._render_tab1_2()
-        self.app.right_panel.log(f"▶ {rel_path} 스키마 로드 완료")
+
+        regi_count = len(self.current_regi_bindings)
+        regi_msg = f" (.csvregi 에셋 바인딩 {regi_count}건)" if regi_count > 0 else ""
+        self.app.right_panel.log(f"▶ {rel_path} 스키마 로드 완료{regi_msg}")
 
     def _render_tab1_1(self):
         for w in self.t1_1_rows_frame.winfo_children(): w.destroy()
         self.t1_1_row_widgets.clear()
-        tk.Label(self.t1_1_rows_frame, text="컬럼명", width=20, bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).grid(row=0, column=0, pady=5)
-        tk.Label(self.t1_1_rows_frame, text="타입 선택", width=20, bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).grid(row=0, column=1, pady=5)
-        for d in self.parsed_headers:
-            self._t1_1_create_row(d['name'], d['type'])
+        tk.Label(self.t1_1_rows_frame, text="컬럼명", width=22, bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).grid(row=0, column=0, padx=5, pady=6)
+        tk.Label(self.t1_1_rows_frame, text="타입 선택", width=15, bg="#252526", fg="#00FF66", font=("맑은 고딕", 9, "bold")).grid(row=0, column=1, padx=5, pady=6)
+        tk.Label(self.t1_1_rows_frame, text="참조 에셋 레지스트리 (.regimeta)", width=36, bg="#252526", fg="#00E5FF", font=("맑은 고딕", 9, "bold")).grid(row=0, column=2, padx=5, pady=6)
+        tk.Label(self.t1_1_rows_frame, text="바인딩 상태", width=26, bg="#252526", fg="#FFD700", font=("맑은 고딕", 9, "bold")).grid(row=0, column=3, padx=5, pady=6)
 
-    def _t1_1_create_row(self, name="", ctype=""):
+        for d in self.parsed_headers:
+            self._t1_1_create_row(d['name'], d['type'], orig_name=d['name'])
+
+    def _t1_1_create_row(self, name="", ctype="", orig_name=""):
         row_idx = len(self.t1_1_row_widgets) + 1
-        ent_name = tk.Entry(self.t1_1_rows_frame, font=("Consolas", 10), bg="#1E1E1E", fg="white", insertbackground="white", width=25)
+        ent_name = tk.Entry(self.t1_1_rows_frame, font=("Consolas", 10), bg="#1E1E1E", fg="white", insertbackground="white", width=24)
         ent_name.insert(0, name)
-        ent_name.grid(row=row_idx, column=0, padx=5, pady=2)
+        ent_name.grid(row=row_idx, column=0, padx=5, pady=3)
         
-        combo_type = ttk.Combobox(self.t1_1_rows_frame, state="readonly", width=20, 
-                                  values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetID", "AssetID[]"])
-        if ctype: 
+        combo_type = ttk.Combobox(
+            self.t1_1_rows_frame,
+            state="readonly",
+            width=15,
+            values=["int", "int[]", "float", "float[]", "string", "string[]", "bool", "bool[]", "enum", "enum[]", "AssetID", "AssetID[]"]
+        )
+        if ctype:
             if ctype.lower() == "assetid": ctype = "AssetID"
             elif ctype.lower() == "assetid[]": ctype = "AssetID[]"
             combo_type.set(ctype)
-            
-        combo_type.grid(row=row_idx, column=1, padx=5, pady=2)
-        self.t1_1_row_widgets.append((ent_name, combo_type))
+        combo_type.grid(row=row_idx, column=1, padx=5, pady=3)
+
+        combo_regi = ttk.Combobox(self.t1_1_rows_frame, state="disabled", width=36)
+        combo_regi.grid(row=row_idx, column=2, padx=5, pady=3)
+
+        lbl_status = tk.Label(self.t1_1_rows_frame, text="-", bg="#252526", fg="#777777", font=("맑은 고딕", 9), anchor="w", width=28)
+        lbl_status.grid(row=row_idx, column=3, padx=5, pady=3, sticky="w")
+
+        row_item = {
+            "ent_name": ent_name,
+            "combo_type": combo_type,
+            "combo_regi": combo_regi,
+            "lbl_status": lbl_status,
+            "orig_name": orig_name,
+            "missing_fallback_info": None
+        }
+
+        combo_type.bind("<<ComboboxSelected>>", lambda e, it=row_item: self._on_row_type_changed(it))
+        combo_regi.bind("<<ComboboxSelected>>", lambda e, it=row_item: self._on_row_regi_changed(it))
+
+        self._update_row_registry_widget_state(row_item, preserve_selection=False)
+        self.t1_1_row_widgets.append(row_item)
+
+    def _update_row_registry_widget_state(self, row_item, preserve_selection=False):
+        combo_type = row_item["combo_type"]
+        combo_regi = row_item["combo_regi"]
+        lbl_status = row_item["lbl_status"]
+        col_key = row_item["orig_name"] or row_item["ent_name"].get().strip()
+
+        ctype = combo_type.get().strip()
+        if ctype not in ["AssetID", "AssetID[]"]:
+            combo_regi["values"] = ["(해당 없음)"]
+            combo_regi.set("(해당 없음)")
+            combo_regi.config(state="disabled")
+            lbl_status.config(text="-", fg="#777777")
+            row_item["missing_fallback_info"] = None
+            return
+
+        # AssetID / AssetID[] 인 경우 레지스트리 선택 활성화
+        prev_selected = combo_regi.get().strip() if preserve_selection else ""
+        options = ["(레지스트리 선택)"] + [r["displayLabel"] for r in self.available_registries]
+        bound_info = self.current_regi_bindings.get(col_key)
+        matched_regi = self._find_matching_registry_for_binding(bound_info)
+
+        fallback_label = None
+        if bound_info and not matched_regi:
+            r_name = bound_info.get("registryName", "Unknown")
+            s_rev = bound_info.get("syncedRevision", 0)
+            fallback_label = f"[기존 바인딩] {r_name} [Rev {s_rev}] (파일 미발견)"
+            options.append(fallback_label)
+            row_item["missing_fallback_info"] = bound_info
+        else:
+            row_item["missing_fallback_info"] = None
+
+        combo_regi["values"] = options
+        combo_regi.config(state="readonly")
+
+        if preserve_selection and prev_selected in options and prev_selected != "(해당 없음)":
+            combo_regi.set(prev_selected)
+            self._on_row_regi_changed(row_item)
+        elif matched_regi:
+            combo_regi.set(matched_regi["displayLabel"])
+            synced_rev = int(bound_info.get("syncedRevision", matched_regi["currentRevision"]))
+            curr_rev = int(matched_regi["currentRevision"])
+            if synced_rev == curr_rev:
+                lbl_status.config(text=f"✅ 동기화됨 (Rev {synced_rev})", fg="#5CD679")
+            else:
+                lbl_status.config(text=f"⚠️ 리비전 변경 (Rev {synced_rev} ➔ {curr_rev})", fg="#FFD700")
+        elif fallback_label:
+            combo_regi.set(fallback_label)
+            lbl_status.config(text="❌ .regimeta 파일 위치 확인 필요", fg="#FF5555")
+        else:
+            combo_regi.set("(레지스트리 선택)")
+            if len(self.available_registries) == 0:
+                lbl_status.config(text="⚠️ 스캔된 .regimeta 없음 (추가 필요)", fg="#FF7B88")
+            else:
+                lbl_status.config(text="⚠️ 레지스트리 선택 필요", fg="#FFD700")
+
+    def _on_row_type_changed(self, row_item):
+        self._update_row_registry_widget_state(row_item, preserve_selection=True)
+
+    def _on_row_regi_changed(self, row_item):
+        combo_regi = row_item["combo_regi"]
+        lbl_status = row_item["lbl_status"]
+        col_key = row_item["orig_name"] or row_item["ent_name"].get().strip()
+        selected_label = combo_regi.get().strip()
+
+        if selected_label in ["", "(해당 없음)", "(레지스트리 선택)"]:
+            lbl_status.config(text="⚠️ 레지스트리 선택 필요", fg="#FFD700")
+            return
+
+        if selected_label in self.regi_label_map:
+            regi = self.regi_label_map[selected_label]
+            bound_info = self.current_regi_bindings.get(col_key)
+            if bound_info and bound_info.get("registrySoGuid") == regi["registrySoGuid"]:
+                synced_rev = int(bound_info.get("syncedRevision", regi["currentRevision"]))
+                curr_rev = int(regi["currentRevision"])
+                if synced_rev == curr_rev:
+                    lbl_status.config(text=f"✅ 동기화됨 (Rev {synced_rev})", fg="#5CD679")
+                else:
+                    lbl_status.config(text=f"⚠️ 리비전 변경 (Rev {synced_rev} ➔ {curr_rev})", fg="#FFD700")
+            else:
+                lbl_status.config(text=f"📌 바인딩 예정 (초기 Rev {regi['currentRevision']})", fg="#00E5FF")
+        elif row_item.get("missing_fallback_info"):
+            lbl_status.config(text="❌ .regimeta 파일 위치 확인 필요", fg="#FF5555")
 
     def _t1_1_add_row(self):
         self._t1_1_create_row()
@@ -198,10 +407,23 @@ class LeftPanel(tk.Frame):
         filepath = os.path.join(self.app.target_dir, rel_path)
         
         new_headers = []
-        for i, (ent_name, combo_type) in enumerate(self.t1_1_row_widgets):
-            name = ent_name.get().strip()
-            ctype = combo_type.get().strip()
-            if not name: continue
+        new_bindings = {}
+        seen_names = set()
+        allow_unbound_save = False
+
+        for i, row_item in enumerate(self.t1_1_row_widgets):
+            name = row_item["ent_name"].get().strip()
+            ctype = row_item["combo_type"].get().strip()
+            selected_regi_label = row_item["combo_regi"].get().strip()
+            orig_name = row_item["orig_name"]
+
+            if not name:
+                continue
+
+            if name in seen_names:
+                messagebox.showerror("중복 컬럼명", f"테이블 내에 중복된 컬럼명('{name}')이 존재합니다.")
+                return
+            seen_names.add(name)
             
             existing_constraints = []
             if i < len(self.parsed_headers):
@@ -213,20 +435,72 @@ class LeftPanel(tk.Frame):
                 new_headers.append(f"{{{name}/{ctype}}}")
             else:
                 new_headers.append(f"{{{name}}}")
+
+            # AssetID 또는 AssetID[] 컬럼인 경우 .csvregi 바인딩 정보 구성
+            if ctype in ["AssetID", "AssetID[]"]:
+                prev_binding = self.current_regi_bindings.get(orig_name) or self.current_regi_bindings.get(name)
+
+                if selected_regi_label in self.regi_label_map:
+                    regi = self.regi_label_map[selected_regi_label]
+                    # 기존과 동일한 레지스트리(GUID 일치)를 유지한 경우 syncedRevision 보존
+                    if prev_binding and prev_binding.get("registrySoGuid") and prev_binding.get("registrySoGuid") == regi["registrySoGuid"]:
+                        synced_rev = int(prev_binding.get("syncedRevision", regi["currentRevision"]))
+                    elif prev_binding and not prev_binding.get("registrySoGuid") and prev_binding.get("regiMetaPath") == regi["regiMetaPath"]:
+                        synced_rev = int(prev_binding.get("syncedRevision", regi["currentRevision"]))
+                    else:
+                        synced_rev = int(regi["currentRevision"])
+
+                    new_bindings[name] = {
+                        "registryName": regi["registryName"],
+                        "registrySoGuid": regi["registrySoGuid"],
+                        "assetType": regi["assetType"],
+                        "regiMetaPath": regi["regiMetaPath"],
+                        "syncedRevision": synced_rev
+                    }
+                elif row_item.get("missing_fallback_info") and selected_regi_label.startswith("[기존 바인딩]"):
+                    new_bindings[name] = dict(row_item["missing_fallback_info"])
+                else:
+                    if len(self.available_registries) > 0:
+                        messagebox.showerror(
+                            "레지스트리 선택 필요",
+                            f"'{name}' ({ctype}) 컬럼에 연결할 참조 에셋 레지스트리(.regimeta)를 선택해주세요."
+                        )
+                        return
+                    elif not allow_unbound_save:
+                        ans = messagebox.askyesno(
+                            "레지스트리 미연결 확인",
+                            f"현재 워크스페이스에서 스캔된 .regimeta 파일이 없어 '{name}' ({ctype}) 컬럼에 레지스트리를 연결하지 못했습니다.\n\n"
+                            "레지스트리 바인딩 없이 스키마만 먼저 저장하시겠습니까?\n"
+                            "('아니오'를 누르면 저장을 취소하고 [📂 외부 .regimeta 직접 추가] 버튼으로 파일을 먼저 등록할 수 있습니다.)"
+                        )
+                        if not ans:
+                            return
+                        allow_unbound_save = True
                 
         success, msg = write_headers(filepath, new_headers)
-        if success:
-            self.app.right_panel.log(f"✅ 스키마 반영 완료.")
-            self._t1_load_headers()
+        if not success:
+            self.app.right_panel.log(f"❌ 스키마 저장 실패: {msg}")
+            return
+
+        regi_ok, regi_res = save_csvregi(filepath, new_bindings)
+        if not regi_ok:
+            self.app.right_panel.log(f"⚠️ 스키마는 저장되었으나 .csvregi 저장 실패: {regi_res}")
         else:
-            self.app.right_panel.log(f"❌ 저장 실패: {msg}")
+            csvregi_name = os.path.basename(get_csvregi_path(filepath))
+            if new_bindings:
+                self.app.right_panel.log(f"✅ 스키마 및 {csvregi_name} (AssetID 바인딩 {len(new_bindings)}건) 저장 완료.")
+            else:
+                self.app.right_panel.log(f"✅ 스키마 반영 완료.")
+
+        self._t1_load_headers()
 
     def _render_tab1_2(self):
         for w in self.t1_2_rows_frame.winfo_children(): w.destroy()
         self.t1_2_row_widgets.clear()
         
         for d in self.parsed_headers:
-            builder = ColumnConstraintBuilder(self.t1_2_rows_frame, d['name'], d['type'], d['constraints'])
+            regi_binding = self.current_regi_bindings.get(d['name'])
+            builder = ColumnConstraintBuilder(self.t1_2_rows_frame, d['name'], d['type'], d['constraints'], regi_binding=regi_binding)
             builder.pack(fill="x", pady=5)
             self.t1_2_row_widgets.append(builder)
 

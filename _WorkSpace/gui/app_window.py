@@ -79,6 +79,7 @@ class AppGUI(tk.Tk):
         self.workspace_root = None
         self.workspace_file = None
         self.erd_html_rel_path = None
+        self.external_regimeta_paths = []
         self._is_loading_config = False
         
         self.include_subdirs = tk.BooleanVar(value=True)
@@ -148,6 +149,7 @@ class AppGUI(tk.Tk):
                 if "excludePrefix" in settings:
                     self.exclude_prefix_var.set(settings["excludePrefix"])
                     set_exclude_prefix(settings["excludePrefix"])
+                self.external_regimeta_paths = list(settings.get("externalRegiMetaPaths", []))
                 
                 erd_rel = data.get("erdHtmlPath", None)
                 if not erd_rel:
@@ -176,7 +178,8 @@ class AppGUI(tk.Tk):
         data["settings"] = {
             "maxSuperkeyLength": self.max_combo_var.get(),
             "includeSubDirectories": self.include_subdirs.get(),
-            "excludePrefix": self.exclude_prefix_var.get().strip() or "Disabled"
+            "excludePrefix": self.exclude_prefix_var.get().strip() or "Disabled",
+            "externalRegiMetaPaths": self.external_regimeta_paths
         }
         try:
             with open(filepath, 'w', encoding='utf-8') as f:

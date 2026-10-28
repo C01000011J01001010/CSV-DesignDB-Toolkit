@@ -164,16 +164,40 @@ class ConstraintWidget(tk.Frame):
             return self.entries[0].get()
 
 class ColumnConstraintBuilder(tk.Frame):
-    def __init__(self, parent, col_name, col_type, constraints_list):
+    def __init__(self, parent, col_name, col_type, constraints_list, regi_binding=None):
         super().__init__(parent, bg="#252526", bd=1, relief="solid")
         self.col_name = col_name
         self.col_type = col_type
+        self.regi_binding = regi_binding
         
         header = tk.Frame(self, bg="#252526")
         header.pack(fill="x", padx=10, pady=5)
         tk.Label(header, text=f"■ {col_name}", bg="#252526", fg="#00FF66", font=("맑은 고딕", 11, "bold")).pack(side="left")
         if col_type:
             tk.Label(header, text=f"({col_type})", bg="#252526", fg="#CCCCCC", font=("Consolas", 10)).pack(side="left", padx=5)
+            if col_type.lower() in ["assetid", "assetid[]"]:
+                if regi_binding and regi_binding.get("registryName"):
+                    r_name = regi_binding.get("registryName")
+                    r_rev = regi_binding.get("syncedRevision", 0)
+                    tk.Label(
+                        header,
+                        text=f"🎨 레지스트리: {r_name} (Rev {r_rev})",
+                        bg="#1E1E1E",
+                        fg="#00E5FF",
+                        font=("Consolas", 9, "bold"),
+                        padx=6,
+                        pady=1
+                    ).pack(side="left", padx=6)
+                else:
+                    tk.Label(
+                        header,
+                        text="⚠️ 레지스트리 미연결 (1.1 탭에서 지정 필요)",
+                        bg="#1E1E1E",
+                        fg="#FF5555",
+                        font=("맑은 고딕", 9, "bold"),
+                        padx=6,
+                        pady=1
+                    ).pack(side="left", padx=6)
         
         add_frame = tk.Frame(header, bg="#252526")
         add_frame.pack(side="right")
