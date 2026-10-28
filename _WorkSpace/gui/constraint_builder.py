@@ -191,7 +191,7 @@ class ColumnConstraintBuilder(tk.Frame):
                 else:
                     tk.Label(
                         header,
-                        text="⚠️ 레지스트리 미연결 (1.1 탭에서 지정 필요)",
+                        text="⚠️ 레지스트리 미연결 (2.1 탭에서 지정 필요)",
                         bg="#1E1E1E",
                         fg="#FF5555",
                         font=("맑은 고딕", 9, "bold"),

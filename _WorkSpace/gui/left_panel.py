@@ -36,7 +36,7 @@ class LeftPanel(tk.Frame):
         self._build_tab2()
 
         self.tab1 = tk.Frame(self.notebook, bg="#1E1E1E")
-        self.notebook.add(self.tab1, text="2. 스키마/제약조건")
+        self.notebook.add(self.tab1, text="2. 스키마 설정")
         self._build_tab1()
         
         self.tab3 = tk.Frame(self.notebook, bg="#1E1E1E")
@@ -82,6 +82,8 @@ class LeftPanel(tk.Frame):
         btn_refresh.pack(side="left", padx=2)
         btn_load = tk.Button(top_frame, text="헤더 로드", font=("맑은 고딕", 9, "bold"), bg="#007ACC", fg="white", bd=0, command=self._t1_load_headers)
         btn_load.pack(side="left", padx=2)
+        btn_open = tk.Button(top_frame, text="엑셀 열기", font=("맑은 고딕", 9, "bold"), bg="#28A745", fg="white", bd=0, command=self._t1_open_excel)
+        btn_open.pack(side="left", padx=2)
 
         guide_frame = tk.Frame(self.tab1, bg="#252526", bd=1, relief="solid")
         guide_frame.pack(fill="x", padx=10, pady=(0, 5))
@@ -95,11 +97,11 @@ class LeftPanel(tk.Frame):
         self.sub_notebook.pack(fill="both", expand=True, padx=5, pady=5)
         
         self.sub_tab1 = tk.Frame(self.sub_notebook, bg="#1E1E1E")
-        self.sub_notebook.add(self.sub_tab1, text="1.1 타입 설정")
+        self.sub_notebook.add(self.sub_tab1, text="2.1 타입 설정")
         self._build_sub_tab1()
         
         self.sub_tab2 = tk.Frame(self.sub_notebook, bg="#1E1E1E")
-        self.sub_notebook.add(self.sub_tab2, text="1.2 제약조건 설정")
+        self.sub_notebook.add(self.sub_tab2, text="2.2 제약조건 설정")
         self._build_sub_tab2()
 
     def _build_sub_tab1(self):
