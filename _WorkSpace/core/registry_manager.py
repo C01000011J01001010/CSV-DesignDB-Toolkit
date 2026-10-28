@@ -808,3 +808,56 @@ def run_asset_id_synchronization(
 
     summary["success"] = (summary["errors"] == 0)
     return summary
+
+
+def get_registry_snapshot_at_revision(log_filepath, target_rev):
+    """
+    특정 리비전(target_rev) 시점의 .regilog 스냅샷을 분석하여 반환합니다.
+    반환값: (success: bool, snapshot_or_err: dict | str)
+    snapshot 구조:
+      - active_ids: { id_str: lastKnownName } (target_rev 시점에 살아있는 에셋 ID > 0)
+      - deleted_ids: { old_id_str: lastKnownName } (과거에 존재했으나 target_rev 시점에 삭제(id=0)된 에셋의 마지막 유효 ID)
+    """
+    log_data = parse_regilog_file(log_filepath)
+    if not log_data:
+        return False, f".regilog 파일을 읽을 수 없습니다: {log_filepath}"
+
+    active_ids = {}
+    deleted_ids = {}
+
+    for record in log_data.get("assets", []):
+        if not isinstance(record, dict):
+            continue
+        last_name = str(record.get("lastKnownName", "")).strip() or record.get("guid", "Unknown")
+        history = record.get("history", [])
+
+        curr_id = get_asset_id_at_revision(history, target_rev)
+        if curr_id > 0:
+            active_ids[str(curr_id)] = last_name
+        else:
+            # 현재(target_rev 기준) 삭제(0)된 상태라면, target_rev 이전에 가졌던 마지막 양수 ID를 추적
+            last_positive_rev = -1
+            last_positive_id = 0
+            for entry in history:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    r = int(entry.get("rev", -1))
+                    aid = int(entry.get("id", 0))
+                except (ValueError, TypeError):
+                    continue
+                if r <= target_rev and aid > 0 and r >= last_positive_rev:
+                    last_positive_rev = r
+                    last_positive_id = aid
+            if last_positive_id > 0:
+                deleted_ids[str(last_positive_id)] = last_name
+
+    # 다른 활성 에셋이 해당 번호를 새로 부여받아 사용 중이라면 deleted_ids에서 제외
+    for k in list(deleted_ids.keys()):
+        if k in active_ids:
+            del deleted_ids[k]
+
+    return True, {
+        "active_ids": active_ids,
+        "deleted_ids": deleted_ids,
+    }

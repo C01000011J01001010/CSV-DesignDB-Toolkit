@@ -553,13 +553,15 @@ class AppGUI(tk.Tk):
             erd_full_path = os.path.join(self.workspace_root, erd_rel_name)
 
             self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전체 무결성 글로벌 검증")
+            extra_paths = getattr(self, "external_regimeta_paths", [])
             erd_created = run_global_validation(
                 self.workspace_root,
                 self.right_panel.log,
                 self.set_progress,
                 prefix,
                 project_name=proj_name,
-                erd_output_path=erd_full_path
+                erd_output_path=erd_full_path,
+                extra_regi_paths=extra_paths
             )
             if erd_created:
                 self.erd_html_rel_path = erd_rel_name

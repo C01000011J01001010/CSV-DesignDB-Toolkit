@@ -413,6 +413,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="legend-item"><span class="dot" style="background:transparent;border:2px solid #FFD700;"></span> 선택됨(강조)</div>
         <div class="legend-item"><span style="color:#FFD700;font-weight:bold;">🔑</span> PK</div>
         <div class="legend-item"><span style="color:#00FF66;font-weight:bold;">🔗</span> FK</div>
+        <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">🎨</span> AssetID</div>
         <div class="legend-item"><span style="color:#00E5FF;font-weight:bold;">━━▶</span> 정상참조</div>
         <div class="legend-item"><span style="color:#FF4444;font-weight:bold;">┅┅▶</span> 깨진참조</div>
     </div>
@@ -511,14 +512,19 @@ function buildNodeSvg(node, level, isSelected = false) {
             const isKey = c.is_pk || c.is_fk;
             if (level <= 3 && !isKey) continue;
 
-            let icon = "📄";
+            const isAssetCol = Boolean(c.regi_badge || (c.type && c.type.toLowerCase().startsWith("assetid")));
+            let icon = isAssetCol ? "🎨" : "📄";
             if (c.is_pk && c.is_fk) icon = "🔑🔗";
             else if (c.is_pk) icon = "🔑";
             else if (c.is_fk) icon = "🔗";
 
             const typeStr = (level >= 3) ? `(${c.type})` : "";
-            const constStr = (level === 5 && c.constraints && c.constraints.length > 0)
-                ? `[${c.constraints.join(", ")}]` : "";
+            const extraConsts = (c.constraints ? [...c.constraints] : []);
+            if (level === 5 && c.regi_badge && c.regi_badge.text) {
+                extraConsts.push(c.regi_badge.text);
+            }
+            const constStr = (level === 5 && extraConsts.length > 0)
+                ? `[${extraConsts.join(", ")}]` : "";
 
             rows.push({
                 icon: icon,
@@ -1050,9 +1056,11 @@ function renderSidebar(nodeId) {
     if (node.columns.length > 0) {
         html += `<table class="col-table"><thead><tr><th>구분</th><th>컬럼명</th><th>타입 / 제약조건</th></tr></thead><tbody>`;
         for (const c of node.columns) {
+            const isAssetCol = Boolean(c.regi_badge || (c.type && c.type.toLowerCase().startsWith("assetid")));
             let keyBadge = "";
             if (c.is_pk) keyBadge += `<span class="badge-pk">🔑PK</span><br>`;
             if (c.is_fk) keyBadge += `<span class="badge-fk">🔗FK</span><br>`;
+            if (isAssetCol) keyBadge += `<span style="color:#00E5FF;font-weight:bold;white-space:nowrap;">🎨Asset</span><br>`;
             if (!keyBadge) keyBadge = `<span style="color:#777;">일반</span>`;
 
             let constHtml = "";
@@ -1061,6 +1069,18 @@ function renderSidebar(nodeId) {
             }
             if (c.fk_Targets && c.fk_Targets.length > 0) {
                 constHtml += `<span class="badge-const" style="color:#00FF66;">참조: ${escapeXml(c.fk_Targets.join(", "))}</span>`;
+            }
+            if (c.regi_badge && c.regi_badge.text) {
+                let rColor = "#00E5FF";
+                let rIcon = "🎨";
+                if (c.regi_badge.status === "outdated") {
+                    rColor = "#FFD700";
+                    rIcon = "⚠️";
+                } else if (c.regi_badge.status === "unbound" || c.regi_badge.status === "error") {
+                    rColor = "#FF5555";
+                    rIcon = "❌";
+                }
+                constHtml += `<span class="badge-const" style="color:${rColor};font-weight:bold;">${rIcon} ${escapeXml(c.regi_badge.text)}</span>`;
             }
 
             html += `<tr>
@@ -1207,6 +1227,7 @@ def generate_erd_html(workspace_root, project_name, df_dict, file_errors, fk_edg
                 'is_pk': is_pk,
                 'is_fk': is_fk,
                 'fk_Targets': fk_col_map.get(col_name, []),
+                'regi_badge': col_meta.get('regi_badge', None),
                 'is_schema': col_meta.get('is_schema', False)
             })
 

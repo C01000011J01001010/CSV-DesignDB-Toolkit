@@ -4,6 +4,13 @@ import pandas as pd
 import numpy as np
 import re
 from core.erd_generator import generate_erd_html
+from core.registry_manager import (
+    scan_available_registries,
+    resolve_registry_for_binding,
+    load_csvregi,
+    get_registry_snapshot_at_revision,
+    _normalize_id_token,
+)
 
 def parse_header(raw_str):
     name = str(raw_str).strip().lstrip('\ufeff')
@@ -48,7 +55,15 @@ def format_errors(invalid_series, limit=3):
     if total > limit: res += f" (외 {total - limit}건)"
     return res
 
-def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="Disabled", project_name="Workspace", erd_output_path=None):
+def run_global_validation(
+    workspace_root,
+    on_log,
+    on_progress,
+    exclude_prefix="Disabled",
+    project_name="Workspace",
+    erd_output_path=None,
+    extra_regi_paths=None
+):
     csv_files = []
     for root, dirs, files in os.walk(workspace_root):
         rel_root = os.path.relpath(root, workspace_root)
@@ -94,8 +109,13 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
         for f in missing_pk: on_log(f" ❌ {f} (기본키 미설정)")
         return False
 
-    on_log("✅ 모든 테이블의 메타데이터 확인 완료. 데이터 로드 시작...\n")
+    on_log("✅ 모든 테이블의 메타데이터 확인 완료. 데이터 및 에셋 레지스트리(.csvregi) 로드 시작...\n")
     on_progress(20)
+
+    available_registries = scan_available_registries(
+        workspace_root, exclude_prefix=exclude_prefix, extra_paths=extra_regi_paths
+    )
+    regilog_snapshot_cache = {}
     
     file_errors = {}
     
@@ -104,6 +124,8 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
         if base_name not in meta_dict: continue
         file_errors[base_name] = [] 
         rel_path = os.path.relpath(csv_file, workspace_root).replace('\\', '/')
+        regi_data = load_csvregi(csv_file)
+        regi_bindings = regi_data.get('bindings', {})
         
         try:
             try: df = pd.read_csv(csv_file, encoding='utf-8-sig', dtype=str)
@@ -114,13 +136,20 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
             for c in df.columns:
                 c_name, c_type, constraints, is_schema = parse_header(c)
                 rename_map[c] = c_name
-                col_info[c_name] = {'type': c_type, 'constraints': constraints, 'raw': c, 'is_schema': is_schema}
+                col_info[c_name] = {
+                    'type': c_type,
+                    'constraints': constraints,
+                    'raw': c,
+                    'is_schema': is_schema,
+                    'regi_badge': None
+                }
             
             df = df.rename(columns=rename_map)
             df_dict[base_name] = {
                 'df': df,
                 'info': col_info,
                 'meta': meta_dict[base_name],
+                'regi_bindings': regi_bindings,
                 'rel_path': rel_path
             }
         except Exception as e:
@@ -129,12 +158,13 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
 
     on_progress(40)
     total_errors = 0
-    on_log("🔍 2단계: 개체, 고유, Null, 도메인, 참조 무결성 통합 검사 가동 중...")
+    on_log("🔍 2단계: 개체, 고유, Null, 도메인, 참조 및 에셋 레지스트리 무결성 통합 검사 가동 중...")
     
     for t_name, t_data in df_dict.items():
         df = t_data['df']
         info = t_data['info']
         meta = t_data['meta']
+        regi_bindings = t_data.get('regi_bindings', {})
         
         pk_cols = meta['primaryKey']
         missing_in_df = [p for p in pk_cols if p not in df.columns]
@@ -153,6 +183,14 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                 invalid_df = df[pk_dup_mask][pk_cols]
                 invalid_series = pd.Series([", ".join(x.astype(str)) for x in invalid_df.to_numpy()], index=invalid_df.index)
                 file_errors[t_name].append(f"[개체 무결성] 기본키({pk_cols}) 중복 ➔ {format_errors(invalid_series)}")
+                total_errors += 1
+
+        # .csvregi 에 남아있는 불필요/구버전 컬럼 바인딩 검사
+        for bound_col in regi_bindings.keys():
+            if bound_col not in info or info[bound_col].get('type', '').replace('[]', '').lower() != 'assetid':
+                file_errors[t_name].append(
+                    f"[에셋 레지스트리 무결성] .csvregi 파일에 유효하지 않은 컬럼('{bound_col}') 바인딩이 남아있습니다. [2. 스키마 설정]에서 스키마 저장을 눌러 갱신해주세요."
+                )
                 total_errors += 1
 
         for c_name, c_dict in info.items():
@@ -194,6 +232,125 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
                         invalid_series = non_nulls[~valid_mask]
                         file_errors[t_name].append(f"[도메인 무결성] '{c_name}' '{c_type_base}' 형식 위반 ➔ {format_errors(invalid_series)}")
                         total_errors += 1
+
+            # 🎨 에셋 레지스트리(.csvregi / .regimeta / .regilog) 무결성 검사
+            if c_type_base == 'assetid':
+                b_info = regi_bindings.get(c_name)
+                if not b_info:
+                    c_dict['regi_badge'] = {
+                        'status': 'unbound',
+                        'text': '레지스트리 미연결 (.csvregi 누락)'
+                    }
+                    file_errors[t_name].append(
+                        f"[에셋 레지스트리 무결성] '{c_name}' ({c_type_full}) 컬럼에 연결된 에셋 레지스트리(.csvregi)가 없습니다. [2. 스키마 설정]에서 레지스트리를 지정해주세요."
+                    )
+                    total_errors += 1
+                else:
+                    matched_regi = resolve_registry_for_binding(b_info, available_registries, workspace_root)
+                    if not matched_regi:
+                        r_name = b_info.get('registryName', 'Unknown')
+                        c_dict['regi_badge'] = {
+                            'status': 'error',
+                            'text': f"레지스트리 누락: {r_name} (.regimeta 없음)"
+                        }
+                        file_errors[t_name].append(
+                            f"[에셋 레지스트리 무결성] '{c_name}' 컬럼이 참조하는 레지스트리('{r_name}')의 .regimeta 파일을 찾을 수 없습니다."
+                        )
+                        total_errors += 1
+                    else:
+                        r_name = matched_regi['registryName']
+                        synced_rev = int(b_info.get('syncedRevision', 0))
+                        curr_rev = int(matched_regi.get('currentRevision', 0))
+
+                        if synced_rev < curr_rev:
+                            c_dict['regi_badge'] = {
+                                'status': 'outdated',
+                                'text': f"레지스트리: {r_name} (동기화 필요: Rev {synced_rev} ➔ {curr_rev})"
+                            }
+                            file_errors[t_name].append(
+                                f"[에셋 레지스트리 무결성] '{c_name}' 컬럼의 레지스트리('{r_name}') 버전이 구버전입니다 (테이블 Rev {synced_rev} < 유니티 Rev {curr_rev}). AssetID 동기화를 먼저 실행해주세요."
+                            )
+                            total_errors += 1
+                        elif synced_rev > curr_rev:
+                            c_dict['regi_badge'] = {
+                                'status': 'error',
+                                'text': f"레지스트리: {r_name} (리비전 역전: Rev {synced_rev} > {curr_rev})"
+                            }
+                            file_errors[t_name].append(
+                                f"[에셋 레지스트리 무결성] '{c_name}' 컬럼의 레지스트리('{r_name}') 리비전 역전 감지 (테이블 Rev {synced_rev} > 유니티 Rev {curr_rev})."
+                            )
+                            total_errors += 1
+                        else:
+                            c_dict['regi_badge'] = {
+                                'status': 'ok',
+                                'text': f"레지스트리: {r_name} (Rev {curr_rev} ✅)"
+                            }
+
+                        # .regilog 스냅샷 로드 및 실제 AssetID 유효성/삭제 여부 대조
+                        log_fp = matched_regi['logAbsPath']
+                        cache_key = (log_fp, curr_rev)
+                        if cache_key not in regilog_snapshot_cache:
+                            regilog_snapshot_cache[cache_key] = get_registry_snapshot_at_revision(log_fp, curr_rev)
+                        snap_ok, snap_data = regilog_snapshot_cache[cache_key]
+
+                        if not snap_ok:
+                            file_errors[t_name].append(
+                                f"[에셋 레지스트리 무결성] '{c_name}' 컬럼이 참조하는 '{r_name}'의 .regilog 파일을 읽을 수 없습니다."
+                            )
+                            total_errors += 1
+                            c_dict['regi_badge'] = {
+                                'status': 'error',
+                                'text': f"레지스트리: {r_name} (.regilog 읽기 실패)"
+                            }
+                        elif not non_nulls.empty:
+                            active_ids = snap_data['active_ids']
+                            deleted_ids = snap_data['deleted_ids']
+                            del_idx, del_vals = [], []
+                            ghost_idx, ghost_vals = [], []
+
+                            for row_idx, cell_val in non_nulls.items():
+                                raw_tokens = str(cell_val).split('|') if is_array else [str(cell_val)]
+                                for tok_raw in raw_tokens:
+                                    tok = _normalize_id_token(tok_raw)
+                                    if tok == "" or tok == "0":
+                                        continue
+                                    if not re.match(r'^-?\d+$', tok):
+                                        continue
+                                    if int(tok) < 0:
+                                        ghost_idx.append(row_idx)
+                                        ghost_vals.append(f"{tok}(음수불가)")
+                                    elif tok in active_ids:
+                                        continue
+                                    elif tok in deleted_ids:
+                                        del_idx.append(row_idx)
+                                        del_vals.append(f"ID {tok}('{deleted_ids[tok]}')")
+                                    else:
+                                        ghost_idx.append(row_idx)
+                                        ghost_vals.append(f"ID {tok}")
+
+                            if del_vals:
+                                del_series = pd.Series(del_vals, index=del_idx)
+                                file_errors[t_name].append(
+                                    f"[에셋 레지스트리 무결성] '{c_name}' 삭제된 에셋(id=0) 참조 ({r_name}) ➔ {format_errors(del_series)}"
+                                )
+                                total_errors += 1
+                                if c_dict['regi_badge']['status'] == 'ok':
+                                    c_dict['regi_badge'] = {
+                                        'status': 'error',
+                                        'text': f"레지스트리: {r_name} (삭제된 에셋 참조 {len(del_vals)}건 ❌)"
+                                    }
+
+                            if ghost_vals:
+                                ghost_series = pd.Series(ghost_vals, index=ghost_idx)
+                                file_errors[t_name].append(
+                                    f"[에셋 레지스트리 무결성] '{c_name}' 미등록 유령 AssetID 참조 ({r_name} Rev {curr_rev}) ➔ {format_errors(ghost_series)}"
+                                )
+                                total_errors += 1
+                                if c_dict['regi_badge']['status'] == 'ok':
+                                    c_dict['regi_badge'] = {
+                                        'status': 'error',
+                                        'text': f"레지스트리: {r_name} (유령 AssetID {len(ghost_vals)}건 ❌)"
+                                    }
 
             if 'NOT NULL' in constraints:
                 if c_data.isna().any():
@@ -365,7 +522,7 @@ def run_global_validation(workspace_root, on_log, on_progress, exclude_prefix="D
     on_progress(100)
     on_log("\n\n" + "="*60)
     if total_errors == 0:
-        on_log("🎉 [검증 완료] 5대 무결성 위반 사항이 없습니다. 엔진 삽입이 준비되었습니다!")
+        on_log("🎉 [검증 완료] 5대 무결성 및 에셋 레지스트리 위반 사항이 없습니다. 엔진 삽입이 준비되었습니다!")
     else:
         on_log(f"⚠️ [검증 실패] 전체 워크스페이스에서 총 {total_errors}건의 위반 사항이 발견되었습니다. 데이터를 수정해주세요.")
     on_log("="*60)
