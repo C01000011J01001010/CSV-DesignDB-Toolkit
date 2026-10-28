@@ -126,3 +126,76 @@ def write_headers(filepath, new_headers, orig_offsets=None):
         return False, "엑셀 파일이 현재 열려 있어 저장할 수 없습니다. 엑셀 창을 닫고 다시 시도해주세요."
     except Exception as e:
         return False, str(e)
+
+
+def sync_csvmeta_columns(table_filepath, rename_map, active_col_names):
+    """
+    스키마 설정에서 컬럼명이 변경되거나 삭제되었을 때,
+    대응하는 .csvmeta 파일 내의 superKeys, primaryKey, foreignKeys 컬럼명을 자동 동기화합니다.
+    """
+    import json
+    meta_path = os.path.splitext(table_filepath)[0] + ".csvmeta"
+    if not os.path.isfile(meta_path):
+        return False, "no_meta"
+
+    try:
+        with open(meta_path, "r", encoding="utf-8-sig") as f:
+            meta = json.load(f)
+        if not isinstance(meta, dict):
+            return False, "invalid_meta"
+
+        changed = False
+        active_set = set(active_col_names)
+
+        # 1. superKeys 업데이트
+        if "superKeys" in meta and isinstance(meta["superKeys"], list):
+            new_sks = []
+            for sk in meta["superKeys"]:
+                if not isinstance(sk, list):
+                    continue
+                mapped_sk = [rename_map.get(c, c) for c in sk]
+                if all(c in active_set for c in mapped_sk):
+                    if mapped_sk not in new_sks:
+                        new_sks.append(mapped_sk)
+                if mapped_sk != sk:
+                    changed = True
+            if len(new_sks) != len(meta["superKeys"]):
+                changed = True
+            meta["superKeys"] = new_sks
+
+        # 2. primaryKey 업데이트
+        if "primaryKey" in meta and isinstance(meta["primaryKey"], list) and meta["primaryKey"]:
+            mapped_pk = [rename_map.get(c, c) for c in meta["primaryKey"]]
+            if all(c in active_set for c in mapped_pk):
+                if mapped_pk != meta["primaryKey"]:
+                    meta["primaryKey"] = mapped_pk
+                    changed = True
+            else:
+                meta["primaryKey"] = []
+                changed = True
+
+        # 3. foreignKeys 로컬 매핑 컬럼 업데이트
+        if "foreignKeys" in meta and isinstance(meta["foreignKeys"], dict):
+            new_fks = {}
+            for fk_name, fk_info in meta["foreignKeys"].items():
+                if not isinstance(fk_info, dict):
+                    continue
+                old_cols = fk_info.get("columns", [])
+                mapped_cols = [rename_map.get(c, c) for c in old_cols]
+                if all(c in active_set for c in mapped_cols):
+                    new_fk_info = dict(fk_info)
+                    new_fk_info["columns"] = mapped_cols
+                    new_fks[fk_name] = new_fk_info
+                    if mapped_cols != old_cols:
+                        changed = True
+                else:
+                    changed = True
+            meta["foreignKeys"] = new_fks
+
+        if changed:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            return True, "updated"
+        return True, "unchanged"
+    except Exception as e:
+        return False, str(e)

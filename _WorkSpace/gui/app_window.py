@@ -11,7 +11,7 @@ from core.converter import convert_xlsx_file, convert_ansi_csv_to_utf8
 from core.superkey_finder import find_super_keys
 from core.validator import run_global_validation
 from core.watcher import PipelineWatcher
-from core.registry_manager import run_asset_id_synchronization
+from core.registry_manager import run_asset_id_synchronization, preview_asset_id_synchronization
 
 from gui.left_panel import LeftPanel
 from gui.right_panel import RightPanel
@@ -58,6 +58,136 @@ class CustomInputDialog(tk.Toplevel):
 
     def on_cancel(self):
         self.result = None
+        self.destroy()
+
+
+class AssetSyncPreviewDialog(tk.Toplevel):
+    def __init__(self, parent, preview_report, title="🔍 AssetID 리비전 변경 프리뷰 및 동기화 승인"):
+        super().__init__(parent)
+        self.title(title)
+
+        width = 760
+        height = 560
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (width // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (height // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(620, 420)
+
+        self.configure(bg="#252526")
+        self.approved = False
+
+        self.transient(parent)
+        self.grab_set()
+
+        outdated_cnt = len(preview_report.get("outdated_tables", []))
+        updated_cells = preview_report.get("total_updated_cells", 0)
+        del_warns = preview_report.get("total_deleted_warnings", 0)
+
+        header = tk.Frame(self, bg="#1E1E1E", pady=10, padx=16)
+        header.pack(fill="x")
+        tk.Label(
+            header,
+            text=f"🎨 동기화 대상 테이블: {outdated_cnt}개  |  치환 예정 셀: {updated_cells}건  |  삭제된 에셋(id=0) 경고: {del_warns}건",
+            font=("맑은 고딕", 11, "bold"),
+            fg="#00E5FF" if del_warns == 0 else "#FFD700",
+            bg="#1E1E1E"
+        ).pack(anchor="w")
+        tk.Label(
+            header,
+            text="아래 변경 내역(Diff Preview)을 확인한 뒤 [승인 및 동기화 실행]을 누르면 원본 엑셀(.xlsx), .csv, .csvregi가 일괄 갱신됩니다.",
+            font=("맑은 고딕", 9),
+            fg="#CCCCCC",
+            bg="#1E1E1E"
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = tk.Frame(self, bg="#252526", padx=16, pady=10)
+        body.pack(fill="both", expand=True)
+
+        text_area = tk.Text(
+            body,
+            font=("Consolas", 9),
+            bg="#121212",
+            fg="#D4D4D4",
+            insertbackground="white",
+            bd=1,
+            relief="solid",
+            wrap="word"
+        )
+        scroll_y = ttk.Scrollbar(body, orient="vertical", command=text_area.yview)
+        text_area.configure(yscrollcommand=scroll_y.set)
+        text_area.pack(side="left", fill="both", expand=True)
+        scroll_y.pack(side="right", fill="y")
+
+        lines = []
+        for t_info in preview_report.get("outdated_tables", []):
+            lines.append("=" * 72)
+            lines.append(f"📁 테이블: {t_info['target_file_label']} (치환 예정 셀: {t_info['updated_cells']}개)")
+            lines.append("-" * 72)
+            for cs in t_info.get("col_summaries", []):
+                lines.append(
+                    f"  📌 컬럼 '{cs['col_name']}' ➔ 레지스트리 '{cs['registry_name']}' "
+                    f"[Rev {cs['old_rev']} ➔ Rev {cs['new_rev']}] "
+                    f"(ID 변경 규칙: {cs['rule_count']}건, 삭제된 에셋: {cs['deleted_asset_count']}건)"
+                )
+            cell_diffs = t_info.get("cell_diffs", [])
+            if cell_diffs:
+                lines.append("")
+                for d_line in cell_diffs[:100]:
+                    lines.append(f"    • {d_line}")
+                if len(cell_diffs) > 100:
+                    lines.append(f"    • ... 외 {len(cell_diffs) - 100}건 추가 변경")
+            else:
+                lines.append("    ℹ️ (이 테이블에는 변경 대상 ID와 일치하는 셀이 없어 리비전 번호만 갱신됩니다)")
+
+            for w_line in t_info.get("del_warnings", []):
+                lines.append(f"    🚨 {w_line}")
+            lines.append("")
+
+        if preview_report.get("errors"):
+            lines.append("⚠️ [참고: 동기화 보류/오류 항목]")
+            for err in preview_report["errors"]:
+                lines.append(f"  ❌ {err}")
+
+        text_area.insert(tk.END, "\n".join(lines))
+        text_area.config(state=tk.DISABLED)
+
+        btn_frame = tk.Frame(self, bg="#252526", pady=12, padx=16)
+        btn_frame.pack(fill="x")
+
+        tk.Button(
+            btn_frame,
+            text="취소 (Cancel)",
+            font=("맑은 고딕", 10, "bold"),
+            bg="#444444",
+            fg="white",
+            width=16,
+            bd=0,
+            pady=6,
+            command=self.on_cancel
+        ).pack(side="right", padx=(8, 0))
+
+        tk.Button(
+            btn_frame,
+            text="✅ 변경 내역 승인 및 동기화 실행",
+            font=("맑은 고딕", 10, "bold"),
+            bg="#28A745",
+            fg="white",
+            width=28,
+            bd=0,
+            pady=6,
+            command=self.on_approve
+        ).pack(side="right")
+
+        self.bind("<Escape>", lambda e: self.on_cancel())
+        self.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.wait_window(self)
+
+    def on_approve(self):
+        self.approved = True
+        self.destroy()
+
+    def on_cancel(self):
+        self.approved = False
         self.destroy()
 
 
@@ -449,12 +579,55 @@ class AppGUI(tk.Tk):
             return err_msg
         return None
 
+    def check_pending_asset_sync_guard(self, action_label="작업"):
+        """
+        변환/추출/검증/감시 시작 전 워크스페이스 내 .csvregi 리비전 차이가 있는지 선제 확인합니다.
+        반환값: True (계속 진행 가능), False (사용자가 작업 취소 또는 선 동기화로 전환)
+        """
+        if not self.workspace_root:
+            return True
+        prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+        extra_paths = getattr(self, "external_regimeta_paths", [])
+        preview = preview_asset_id_synchronization(
+            self.workspace_root,
+            exclude_prefix=prefix,
+            extra_paths=extra_paths,
+            target_table_filepath=None
+        )
+        if not preview.get("needs_sync"):
+            return True
+
+        outdated_cnt = len(preview.get("outdated_tables", []))
+        cell_cnt = preview.get("total_updated_cells", 0)
+        table_names = ", ".join(t["target_file_label"] for t in preview["outdated_tables"][:4])
+        if outdated_cnt > 4:
+            table_names += f" 외 {outdated_cnt - 4}개"
+
+        ans = messagebox.askyesnocancel(
+            "에셋 레지스트리 리비전 변경 감지 (선제 방어)",
+            f"⚠️ 유니티 에셋 레지스트리(.regimeta) 버전이 업데이트된 테이블이 {outdated_cnt}개 감지되었습니다.\n"
+            f"대상: {table_names} (치환 예정 셀: {cell_cnt}건)\n\n"
+            f"구버전 AssetID와 신규 데이터가 섞이는 현상(Stale Edit)을 방지하기 위해\n"
+            f"[{action_label}] 실행 전 지금 먼저 변경 프리뷰를 확인하고 동기화하시겠습니까?\n\n"
+            f" • [예(Y)] : 변경 프리뷰 확인 및 AssetID 선(先) 동기화 실행 (권장)\n"
+            f" • [아니오(N)] : 동기화를 건너뛰고 [{action_label}] 강행\n"
+            f" • [취소] : 작업 중단"
+        )
+        if ans is None:
+            return False
+        if ans is True:
+            self.run_asset_id_sync_all(precomputed_preview=preview)
+            return False
+        return True
+
     def run_xlsx_to_csv_all(self):
         if not self.workspace_root: return
         err = self.check_duplicate_tables()
         if err:
             self.right_panel.log(err)
             messagebox.showerror("중복 테이블명 감지", err)
+            return
+        if not self.check_pending_asset_sync_guard("엑셀 ➔ CSV 변환"):
             return
             
         def task():
@@ -511,6 +684,8 @@ class AppGUI(tk.Tk):
                 self.right_panel.log(err)
                 messagebox.showerror("중복 테이블명 감지", "자동 변환 감시기를 켜기 전에 중복된 테이블명을 해결해주세요.\n\n" + err)
                 return
+            if not self.check_pending_asset_sync_guard("백그라운드 감시 모드 시작"):
+                return
             self.watcher.start(self.workspace_root, True)
             if hasattr(self.left_panel.app, 'btn3'): self.left_panel.app.btn3.config(text="백그라운드 감시 중지 (실행 중...)", bg="#DC3545")
             self.right_panel.log(f"\n🕵️‍♂️ [자동 변환 감시 시작]")
@@ -525,6 +700,8 @@ class AppGUI(tk.Tk):
         if err:
             self.right_panel.log(err)
             messagebox.showerror("중복 테이블명 감지", err)
+            return
+        if not self.check_pending_asset_sync_guard("슈퍼키 추출"):
             return
             
         def task():
@@ -542,6 +719,8 @@ class AppGUI(tk.Tk):
         if err:
             self.right_panel.log(err)
             messagebox.showerror("중복 테이블명 감지", err)
+            return
+        if not self.check_pending_asset_sync_guard("전체 무결성 글로벌 검증"):
             return
             
         def task():
@@ -569,8 +748,7 @@ class AppGUI(tk.Tk):
             self.set_buttons_state(True)
         threading.Thread(target=task, daemon=True).start()
 
-
-    def run_asset_id_sync_all(self):
+    def run_asset_id_sync_all(self, precomputed_preview=None):
         if not self.workspace_root: return
         err = self.check_duplicate_tables()
         if err:
@@ -578,11 +756,39 @@ class AppGUI(tk.Tk):
             messagebox.showerror("중복 테이블명 감지", err)
             return
 
+        prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+        extra_paths = getattr(self, "external_regimeta_paths", [])
+        preview = precomputed_preview or preview_asset_id_synchronization(
+            self.workspace_root,
+            exclude_prefix=prefix,
+            extra_paths=extra_paths,
+            target_table_filepath=None
+        )
+
+        if not preview.get("has_csvregi"):
+            self.right_panel.log("ℹ️ 워크스페이스 내에 에셋 바인딩(.csvregi) 파일이 없습니다.")
+            messagebox.showinfo("안내", "워크스페이스 내에 에셋 바인딩(.csvregi) 파일이 없습니다.")
+            return
+
+        if not preview.get("needs_sync"):
+            if preview.get("errors"):
+                err_text = "\n".join(f"• {e}" for e in preview["errors"])
+                self.right_panel.log(f"⚠️ 동기화 오류 감지:\n{err_text}")
+                messagebox.showwarning("동기화 보류/오류", f"동기화할 수 없는 항목이 있습니다:\n\n{err_text}")
+            else:
+                cnt = preview.get("up_to_date_tables", 0)
+                self.right_panel.log(f"✅ 모든 에셋 바인딩 테이블({cnt}개)이 이미 최신 리비전 상태입니다!")
+                messagebox.showinfo("최신 상태", f"모든 에셋 바인딩 테이블({cnt}개)이 이미 최신 리비전 상태입니다.")
+            return
+
+        dlg = AssetSyncPreviewDialog(self, preview)
+        if not dlg.approved:
+            self.right_panel.log("🛑 사용자가 AssetID 동기화를 취소했습니다.")
+            return
+
         def task():
             self.set_buttons_state(False)
             self.set_progress(0)
-            prefix = self.exclude_prefix_var.get().strip() or "Disabled"
-            extra_paths = getattr(self, "external_regimeta_paths", [])
             self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전역 에셋 레지스트리(.regilog) ➔ 테이블 AssetID 동기화")
 
             was_watching = self.watcher.is_watching
@@ -616,7 +822,6 @@ class AppGUI(tk.Tk):
                     f"동기화가 완료되었으나, 유니티에서 삭제(또는 ID 회수)된 에셋을 참조 중인 셀이 {del_cnt}건 발견되었습니다.\n\n우측 실행 로그에서 상세 행 번호와 에셋 이름을 확인해주세요."
                 ))
 
-            # 현재 2번 탭에 로드된 테이블이 있다면 상태 갱신
             if hasattr(self.left_panel, "t1_combo_files") and self.left_panel.t1_combo_files.get():
                 self.after(0, self.left_panel._t1_load_headers)
 
@@ -630,10 +835,33 @@ class AppGUI(tk.Tk):
             messagebox.showerror("중복 테이블명 감지", err)
             return
 
+        prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+        extra_paths = getattr(self, "external_regimeta_paths", [])
+        preview = preview_asset_id_synchronization(
+            self.workspace_root,
+            exclude_prefix=prefix,
+            extra_paths=extra_paths,
+            target_table_filepath=table_filepath
+        )
+
+        if not preview.get("needs_sync"):
+            if preview.get("errors"):
+                err_text = "\n".join(f"• {e}" for e in preview["errors"])
+                self.right_panel.log(f"⚠️ 동기화 오류 감지:\n{err_text}")
+                messagebox.showwarning("동기화 보류/오류", f"동기화할 수 없는 항목이 있습니다:\n\n{err_text}")
+            else:
+                t_name = os.path.basename(table_filepath)
+                self.right_panel.log(f"✅ '{t_name}' 테이블의 AssetID는 이미 최신 리비전 상태입니다.")
+                messagebox.showinfo("최신 상태", f"'{t_name}' 테이블의 AssetID는 이미 최신 리비전 상태입니다.")
+            return
+
+        dlg = AssetSyncPreviewDialog(self, preview, title=f"🔍 [{os.path.basename(table_filepath)}] AssetID 변경 프리뷰 및 승인")
+        if not dlg.approved:
+            self.right_panel.log("🛑 사용자가 단일 테이블 AssetID 동기화를 취소했습니다.")
+            return
+
         def task():
             self.set_buttons_state(False)
-            prefix = self.exclude_prefix_var.get().strip() or "Disabled"
-            extra_paths = getattr(self, "external_regimeta_paths", [])
             t_name = os.path.basename(table_filepath)
             self.right_panel.log(f"\n🚀 [작업 시작] '{t_name}' 단일 테이블 AssetID 동기화")
 

@@ -5,7 +5,7 @@ import threading
 from gui.widgets import ScrollableFrame
 from gui.constraint_builder import ColumnConstraintBuilder
 from gui.meta_editor import MetaEditorTab
-from core.excel_editor import get_excel_files, read_headers, write_headers
+from core.excel_editor import get_excel_files, read_headers, write_headers, sync_csvmeta_columns
 from core.converter import convert_xlsx_file
 from core.registry_manager import (
     scan_available_registries,
@@ -563,6 +563,7 @@ class LeftPanel(tk.Frame):
         new_headers = []
         orig_offsets = []
         new_bindings = {}
+        rename_map = {}
         seen_names = set()
         allow_unbound_save = False
 
@@ -587,6 +588,8 @@ class LeftPanel(tk.Frame):
                 messagebox.showerror("중복 컬럼명", f"테이블 내에 중복된 컬럼명('{name}')이 존재합니다.")
                 return
             seen_names.add(name)
+            if orig_name:
+                rename_map[orig_name] = name
             
             if ctype and existing_constraints:
                 new_headers.append(f"{{{name}/{ctype}/{'/'.join(existing_constraints)}}}")
@@ -646,8 +649,11 @@ class LeftPanel(tk.Frame):
             messagebox.showerror("저장 실패", msg)
             return
 
-        # 엑셀 스키마 변경 즉시 대응 CSV도 함께 갱신
+        # 엑셀 스키마 변경 즉시 대응 CSV 및 .csvmeta 컬럼명도 함께 갱신
         convert_xlsx_file(filepath)
+        meta_ok, meta_status = sync_csvmeta_columns(filepath, rename_map, seen_names)
+        if meta_ok and meta_status == "updated":
+            self.app.right_panel.log("🔄 컬럼 변경/삭제 내역이 .csvmeta(PK/FK/슈퍼키)에 자동 반영되었습니다.")
 
         regi_ok, regi_res = save_csvregi(filepath, new_bindings)
         if not regi_ok:

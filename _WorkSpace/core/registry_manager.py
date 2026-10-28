@@ -861,3 +861,255 @@ def get_registry_snapshot_at_revision(log_filepath, target_rev):
         "active_ids": active_ids,
         "deleted_ids": deleted_ids,
     }
+
+
+def _preview_single_xlsx_table(xlsx_path, col_sync_plans, rel_display):
+    """
+    원본 .xlsx 파일을 수정하지 않고 읽기 전용으로 스캔하여,
+    치환 예정인 셀 내역(Diff)과 삭제된 에셋(id=0) 참조 경고 내역을 추출합니다.
+    반환값: (success: bool, cell_diffs: list[str], del_warnings: list[str], updated_cells_count: int)
+    """
+    cell_diffs = []
+    del_warnings = []
+    total_updated_cells = 0
+    try:
+        wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+        sheet = wb.active
+        header_row_idx, start_col, end_col = find_schema_bounds(sheet)
+        if header_row_idx is None:
+            wb.close()
+            return False, [f"❌ [{rel_display}] 엑셀에서 스키마 행({{}})을 찾을 수 없습니다."], [], 0
+
+        col_index_map = {}
+        for c_idx in range(start_col, end_col + 1):
+            cell_val = sheet.cell(row=header_row_idx, column=c_idx).value
+            c_name, c_type, is_schema = _parse_schema_header_token(cell_val if cell_val is not None else "")
+            if is_schema and c_name:
+                col_index_map[c_name] = (c_idx, "[]" in c_type)
+
+        max_row = sheet.max_row
+        for col_name, plan in col_sync_plans.items():
+            if col_name not in col_index_map:
+                continue
+            c_idx, is_array = col_index_map[col_name]
+            replace_map = plan["replace_map"]
+            deleted_map = plan["deleted_map"]
+            asset_names = plan["asset_names"]
+
+            for r_idx in range(header_row_idx + 1, max_row + 1):
+                cell_val = sheet.cell(row=r_idx, column=c_idx).value
+                changed, new_val_str, c_notes, d_notes = transform_cell_value_one_pass(
+                    cell_val, is_array, replace_map, deleted_map, asset_names
+                )
+                if changed:
+                    total_updated_cells += 1
+                    cell_diffs.append(f"[엑셀 {r_idx}행] {col_name}: {', '.join(c_notes)}")
+                if d_notes:
+                    del_warnings.append(f"[엑셀 {r_idx}행] {col_name} 삭제된 에셋(id=0) 참조: {', '.join(d_notes)}")
+
+        wb.close()
+        return True, cell_diffs, del_warnings, total_updated_cells
+    except Exception as e:
+        return False, [f"❌ [{rel_display}] 엑셀 프리뷰 스캔 중 오류: {e}"], [], 0
+
+
+def _preview_single_csv_only_table(csv_path, col_sync_plans, rel_display):
+    """
+    원본 .xlsx 없이 .csv만 있는 테이블을 읽기 전용으로 스캔하여 Diff 내역을 추출합니다.
+    """
+    cell_diffs = []
+    del_warnings = []
+    total_updated_cells = 0
+    try:
+        rows = []
+        try:
+            with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.reader(f))
+        except UnicodeDecodeError:
+            with open(csv_path, "r", encoding="cp949", newline="") as f:
+                rows = list(csv.reader(f))
+
+        if not rows:
+            return True, [], [], 0
+
+        headers = rows[0]
+        col_index_map = {}
+        for idx, h in enumerate(headers):
+            c_name, c_type, is_schema = _parse_schema_header_token(h)
+            if c_name:
+                col_index_map[c_name] = (idx, "[]" in c_type)
+
+        for col_name, plan in col_sync_plans.items():
+            if col_name not in col_index_map:
+                continue
+            c_idx, is_array = col_index_map[col_name]
+            replace_map = plan["replace_map"]
+            deleted_map = plan["deleted_map"]
+            asset_names = plan["asset_names"]
+
+            for r_idx in range(1, len(rows)):
+                row = rows[r_idx]
+                if c_idx >= len(row):
+                    continue
+                changed, new_val_str, c_notes, d_notes = transform_cell_value_one_pass(
+                    row[c_idx], is_array, replace_map, deleted_map, asset_names
+                )
+                if changed:
+                    total_updated_cells += 1
+                    cell_diffs.append(f"[CSV {r_idx + 1}행] {col_name}: {', '.join(c_notes)}")
+                if d_notes:
+                    del_warnings.append(f"[CSV {r_idx + 1}행] {col_name} 삭제된 에셋(id=0) 참조: {', '.join(d_notes)}")
+
+        return True, cell_diffs, del_warnings, total_updated_cells
+    except Exception as e:
+        return False, [f"❌ [{rel_display}] CSV 프리뷰 스캔 중 오류: {e}"], [], 0
+
+
+def preview_asset_id_synchronization(
+    workspace_root,
+    exclude_prefix="Disabled",
+    extra_paths=None,
+    target_table_filepath=None
+):
+    """
+    실제 파일을 수정하지 않고, 동기화가 필요한 테이블/컬럼 목록과
+    셀 단위 변경 예정 내역(Diff Preview), 삭제 경고, 오류 목록을 시뮬레이션하여 반환합니다.
+    """
+    report = {
+        "has_csvregi": False,
+        "needs_sync": False,
+        "up_to_date_tables": 0,
+        "outdated_tables": [],
+        "errors": [],
+        "total_updated_cells": 0,
+        "total_deleted_warnings": 0,
+    }
+
+    if not workspace_root or not os.path.isdir(workspace_root):
+        return report
+
+    available_registries = scan_available_registries(
+        workspace_root, exclude_prefix=exclude_prefix, extra_paths=extra_paths
+    )
+
+    csvregi_files = []
+    if target_table_filepath:
+        regi_fp = get_csvregi_path(target_table_filepath)
+        if os.path.isfile(regi_fp):
+            csvregi_files.append(regi_fp)
+    else:
+        for root, dirs, files in os.walk(workspace_root):
+            rel_root = os.path.relpath(root, workspace_root)
+            if rel_root != "." and any(p.startswith(exclude_prefix) for p in rel_root.replace("\\", "/").split("/")):
+                continue
+            for file in files:
+                if file.startswith(exclude_prefix) or file.startswith("~$"):
+                    continue
+                if file.endswith(CSVREGI_EXT):
+                    csvregi_files.append(os.path.join(root, file))
+
+    if not csvregi_files:
+        return report
+
+    report["has_csvregi"] = True
+
+    for regi_fp in sorted(csvregi_files):
+        base_no_ext = os.path.splitext(regi_fp)[0]
+        xlsx_fp = base_no_ext + ".xlsx"
+        csv_fp = base_no_ext + ".csv"
+        rel_display = os.path.relpath(base_no_ext, workspace_root).replace("\\", "/")
+
+        regi_data = load_csvregi(regi_fp)
+        bindings = regi_data.get("bindings", {})
+        if not bindings:
+            continue
+
+        col_sync_plans = {}
+        col_summaries = []
+        table_has_error = False
+
+        for col_name, b_info in bindings.items():
+            matched_regi = resolve_registry_for_binding(b_info, available_registries, workspace_root)
+            if not matched_regi:
+                r_name = b_info.get("registryName", "Unknown")
+                report["errors"].append(f"[{rel_display}] '{col_name}' 컬럼의 레지스트리('{r_name}') .regimeta 파일을 찾을 수 없습니다.")
+                table_has_error = True
+                continue
+
+            synced_rev = int(b_info.get("syncedRevision", 0))
+            curr_rev = int(matched_regi.get("currentRevision", 0))
+            r_name = matched_regi["registryName"]
+
+            if curr_rev == synced_rev:
+                continue
+
+            if curr_rev < synced_rev:
+                report["errors"].append(
+                    f"[{rel_display}] '{col_name}' 리비전 역전 감지 (테이블 Rev {synced_rev} > 유니티 '{r_name}' Rev {curr_rev})"
+                )
+                table_has_error = True
+                continue
+
+            log_fp = matched_regi["logAbsPath"]
+            ok, delta_or_err = build_revision_delta_map(log_fp, synced_rev, curr_rev)
+            if not ok:
+                report["errors"].append(f"[{rel_display}] '{col_name}' ({r_name}) 로그 분석 실패: {delta_or_err}")
+                table_has_error = True
+                continue
+
+            col_sync_plans[col_name] = {
+                "registry": matched_regi,
+                "old_rev": synced_rev,
+                "new_rev": curr_rev,
+                "replace_map": delta_or_err["replace_map"],
+                "deleted_map": delta_or_err["deleted_map"],
+                "asset_names": delta_or_err["asset_names"],
+            }
+            col_summaries.append({
+                "col_name": col_name,
+                "registry_name": r_name,
+                "old_rev": synced_rev,
+                "new_rev": curr_rev,
+                "rule_count": len(delta_or_err["replace_map"]),
+                "deleted_asset_count": len(delta_or_err["deleted_map"]),
+            })
+
+        if not col_sync_plans:
+            if not table_has_error:
+                report["up_to_date_tables"] += 1
+            continue
+
+        has_xlsx = os.path.isfile(xlsx_fp)
+        has_csv = os.path.isfile(csv_fp)
+        if not has_xlsx and not has_csv:
+            report["errors"].append(f"[{rel_display}] 원본 .xlsx 또는 .csv 테이블 파일이 존재하지 않습니다.")
+            continue
+
+        if has_xlsx:
+            ok, cell_diffs, del_warnings, updated_cnt = _preview_single_xlsx_table(
+                xlsx_fp, col_sync_plans, rel_display + ".xlsx"
+            )
+            target_file_label = rel_display + ".xlsx"
+        else:
+            ok, cell_diffs, del_warnings, updated_cnt = _preview_single_csv_only_table(
+                csv_fp, col_sync_plans, rel_display + ".csv"
+            )
+            target_file_label = rel_display + ".csv"
+
+        if not ok:
+            report["errors"].extend(cell_diffs)
+            continue
+
+        report["needs_sync"] = True
+        report["total_updated_cells"] += updated_cnt
+        report["total_deleted_warnings"] += len(del_warnings)
+        report["outdated_tables"].append({
+            "rel_display": rel_display,
+            "target_file_label": target_file_label,
+            "col_summaries": col_summaries,
+            "cell_diffs": cell_diffs,
+            "del_warnings": del_warnings,
+            "updated_cells": updated_cnt,
+        })
+
+    return report
