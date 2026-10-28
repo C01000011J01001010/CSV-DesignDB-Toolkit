@@ -112,6 +112,7 @@ class LeftPanel(tk.Frame):
         tk.Button(btn_frame, text="+ 새 컬럼 추가", font=("맑은 고딕", 9, "bold"), bg="#444444", fg="white", bd=0, padx=8, pady=4, command=self._t1_1_add_row).pack(side="left", padx=(0, 5))
         tk.Button(btn_frame, text="🔄 레지스트리 재스캔", font=("맑은 고딕", 9), bg="#3A3D41", fg="#00E5FF", bd=0, padx=8, pady=4, command=lambda: self._refresh_available_registries(silent=False)).pack(side="left", padx=5)
         tk.Button(btn_frame, text="📂 외부 .regimeta 직접 추가", font=("맑은 고딕", 9), bg="#3A3D41", fg="#FFD700", bd=0, padx=8, pady=4, command=self._add_external_regimeta_dialog).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="⚡ 현재 테이블 AssetID 동기화", font=("맑은 고딕", 9, "bold"), bg="#007ACC", fg="white", bd=0, padx=10, pady=4, command=self._t1_1_sync_current_table).pack(side="left", padx=5)
         tk.Button(btn_frame, text="✅ 엑셀에 스키마(타입) 및 .csvregi 저장", font=("맑은 고딕", 10, "bold"), bg="#28A745", fg="white", bd=0, padx=12, pady=4, command=self._t1_1_save_headers).pack(side="right")
 
     def _build_sub_tab2(self):
@@ -494,6 +495,22 @@ class LeftPanel(tk.Frame):
 
         self._t1_load_headers()
 
+    def _t1_1_sync_current_table(self):
+        rel_path = self.t1_combo_files.get()
+        if not rel_path or not self.app.workspace_root:
+            messagebox.showwarning("안내", "먼저 상단에서 대상 엑셀 파일을 선택하고 [헤더 로드]를 실행해주세요.")
+            return
+        filepath = os.path.join(self.app.target_dir, rel_path)
+        regi_path = get_csvregi_path(filepath)
+        if not os.path.isfile(regi_path):
+            messagebox.showinfo(
+                "안내",
+                "현재 테이블에 저장된 .csvregi 바인딩 파일이 없습니다.\n"
+                "AssetID 컬럼에 레지스트리를 선택한 뒤 먼저 [✅ 엑셀에 스키마(타입) 및 .csvregi 저장]을 눌러주세요."
+            )
+            return
+        self.app.run_single_table_asset_sync(filepath, on_complete_callback=self._t1_load_headers)
+
     def _render_tab1_2(self):
         for w in self.t1_2_rows_frame.winfo_children(): w.destroy()
         self.t1_2_row_widgets.clear()
@@ -547,6 +564,27 @@ class LeftPanel(tk.Frame):
         
         self.app.btn3 = tk.Button(inner, text="백그라운드 자동 변환 모드 시작", font=("맑은 고딕", 11, "bold"), bg="#6C757D", fg="white", bd=0, height=2, command=self.app.toggle_watch_mode)
         self.app.btn3.pack(fill="x", padx=10, pady=5)
+
+        sync_guide_frame = tk.Frame(inner, bg="#252526", bd=1, relief="solid")
+        sync_guide_frame.pack(fill="x", padx=10, pady=(20, 8))
+        sync_guide_text = (
+            "🎨 [유니티 AssetRegistry (.regilog) ➔ 테이블 AssetID 자동 동기화]\n\n"
+            "유니티에서 에셋 재정렬 또는 Stride 배분으로 AssetID가 변경되어 .regimeta 리비전(Rev)이 올라간 경우,\n"
+            ".csvregi 바인딩 이력과 .regilog의 GUID 기록을 대조하여 원본 엑셀(.xlsx)과 .csv의 AssetID를 1-Pass로 일괄 갱신합니다."
+        )
+        tk.Label(sync_guide_frame, text=sync_guide_text, font=("맑은 고딕", 9), fg="#D4D4D4", bg="#252526", justify="left", anchor="w", padx=10, pady=10).pack(fill="x")
+
+        self.app.btn_sync_assets = tk.Button(
+            inner,
+            text="🔄 에셋 레지스트리(.regilog) 변경분 테이블 일괄 동기화 (워크스페이스 전역)",
+            font=("맑은 고딕", 11, "bold"),
+            bg="#17A2B8",
+            fg="white",
+            bd=0,
+            height=2,
+            command=self.app.run_asset_id_sync_all
+        )
+        self.app.btn_sync_assets.pack(fill="x", padx=10, pady=5)
 
     def _build_tab3(self):
         scroll_frame = ScrollableFrame(self.tab3)

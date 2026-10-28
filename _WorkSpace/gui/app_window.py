@@ -11,6 +11,7 @@ from core.converter import convert_xlsx_file, convert_ansi_csv_to_utf8
 from core.superkey_finder import find_super_keys
 from core.validator import run_global_validation
 from core.watcher import PipelineWatcher
+from core.registry_manager import run_asset_id_synchronization
 
 from gui.left_panel import LeftPanel
 from gui.right_panel import RightPanel
@@ -354,6 +355,7 @@ class AppGUI(tk.Tk):
         if hasattr(self.left_panel.app, 'btn2'): self.left_panel.app.btn2.config(state=flag)
         if hasattr(self.left_panel.app, 'btn4'): self.left_panel.app.btn4.config(state=flag)
         if hasattr(self.left_panel.app, 'btn_validate'): self.left_panel.app.btn_validate.config(state=flag)
+        if hasattr(self.left_panel.app, 'btn_sync_assets'): self.left_panel.app.btn_sync_assets.config(state=flag)
         if hasattr(self, 'btn_open_erd'):
             if not state:
                 self.btn_open_erd.config(state=tk.DISABLED)
@@ -563,6 +565,110 @@ class AppGUI(tk.Tk):
                 self.erd_html_rel_path = erd_rel_name
                 self.after(0, self.save_workspace_config)
             self.set_buttons_state(True)
+        threading.Thread(target=task, daemon=True).start()
+
+
+    def run_asset_id_sync_all(self):
+        if not self.workspace_root: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+
+        def task():
+            self.set_buttons_state(False)
+            self.set_progress(0)
+            prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+            extra_paths = getattr(self, "external_regimeta_paths", [])
+            self.right_panel.log("\n🚀 [작업 시작] 워크스페이스 전역 에셋 레지스트리(.regilog) ➔ 테이블 AssetID 동기화")
+
+            was_watching = self.watcher.is_watching
+            if was_watching:
+                self.watcher.stop()
+
+            try:
+                summary = run_asset_id_synchronization(
+                    self.workspace_root,
+                    on_log=self.right_panel.log,
+                    on_progress=self.set_progress,
+                    exclude_prefix=prefix,
+                    extra_paths=extra_paths,
+                    target_table_filepath=None
+                )
+            finally:
+                if was_watching and self.workspace_root:
+                    self.watcher.start(self.workspace_root, True)
+                self.set_buttons_state(True)
+
+            if summary.get("locked_files"):
+                locked_str = "\n".join(f" • {p}" for p in summary["locked_files"])
+                self.after(0, lambda: messagebox.showerror(
+                    "파일 열림(잠금) 감지",
+                    f"다음 파일이 엑셀 또는 외부 프로그램에 열려 있어 동기화를 중단했습니다:\n\n{locked_str}\n\n창을 닫고 다시 시도해주세요."
+                ))
+            elif summary.get("deleted_warnings", 0) > 0:
+                del_cnt = summary["deleted_warnings"]
+                self.after(0, lambda: messagebox.showwarning(
+                    "삭제된 에셋(id=0) 참조 감지",
+                    f"동기화가 완료되었으나, 유니티에서 삭제(또는 ID 회수)된 에셋을 참조 중인 셀이 {del_cnt}건 발견되었습니다.\n\n우측 실행 로그에서 상세 행 번호와 에셋 이름을 확인해주세요."
+                ))
+
+            # 현재 2번 탭에 로드된 테이블이 있다면 상태 갱신
+            if hasattr(self.left_panel, "t1_combo_files") and self.left_panel.t1_combo_files.get():
+                self.after(0, self.left_panel._t1_load_headers)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def run_single_table_asset_sync(self, table_filepath, on_complete_callback=None):
+        if not self.workspace_root or not table_filepath: return
+        err = self.check_duplicate_tables()
+        if err:
+            self.right_panel.log(err)
+            messagebox.showerror("중복 테이블명 감지", err)
+            return
+
+        def task():
+            self.set_buttons_state(False)
+            prefix = self.exclude_prefix_var.get().strip() or "Disabled"
+            extra_paths = getattr(self, "external_regimeta_paths", [])
+            t_name = os.path.basename(table_filepath)
+            self.right_panel.log(f"\n🚀 [작업 시작] '{t_name}' 단일 테이블 AssetID 동기화")
+
+            was_watching = self.watcher.is_watching
+            if was_watching:
+                self.watcher.stop()
+
+            try:
+                summary = run_asset_id_synchronization(
+                    self.workspace_root,
+                    on_log=self.right_panel.log,
+                    on_progress=None,
+                    exclude_prefix=prefix,
+                    extra_paths=extra_paths,
+                    target_table_filepath=table_filepath
+                )
+            finally:
+                if was_watching and self.workspace_root:
+                    self.watcher.start(self.workspace_root, True)
+                self.set_buttons_state(True)
+
+            if summary.get("locked_files"):
+                locked_str = "\n".join(f" • {p}" for p in summary["locked_files"])
+                self.after(0, lambda: messagebox.showerror(
+                    "파일 열림(잠금) 감지",
+                    f"다음 파일이 엑셀 또는 외부 프로그램에 열려 있어 동기화를 중단했습니다:\n\n{locked_str}\n\n창을 닫고 다시 시도해주세요."
+                ))
+            elif summary.get("deleted_warnings", 0) > 0:
+                del_cnt = summary["deleted_warnings"]
+                self.after(0, lambda: messagebox.showwarning(
+                    "삭제된 에셋(id=0) 참조 감지",
+                    f"동기화가 완료되었으나, 유니티에서 삭제(또는 ID 회수)된 에셋을 참조 중인 셀이 {del_cnt}건 발견되었습니다.\n\n우측 실행 로그에서 상세 행 번호와 에셋 이름을 확인해주세요."
+                ))
+
+            if on_complete_callback:
+                self.after(0, on_complete_callback)
+
         threading.Thread(target=task, daemon=True).start()
 
     def on_close(self):
