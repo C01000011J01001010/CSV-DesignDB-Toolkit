@@ -4,7 +4,7 @@ import pandas as pd
 from itertools import combinations
 
 def parse_header(raw_str):
-    name = str(raw_str).strip()
+    name = str(raw_str).strip().lstrip('\ufeff')
     c_type = ""
     constraints = []
     if name.startswith('{') and name.endswith('}'):
@@ -17,7 +17,6 @@ def parse_header(raw_str):
 def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress, exclude_prefix="Disabled"):
     csv_files = []
     for root, dirs, files in os.walk(target_dir):
-        # 💡 [핵심 버그 픽스] target_dir을 기준으로 상대 경로에서만 Prefix 필터링 적용!
         rel_root = os.path.relpath(root, target_dir)
         if rel_root != '.' and any(p.startswith(exclude_prefix) for p in rel_root.replace('\\', '/').split('/')):
             continue
@@ -41,8 +40,8 @@ def find_super_keys(target_dir, max_combo, include_subdirs, on_log, on_progress,
         json_file = os.path.splitext(csv_file)[0] + ".csvmeta"
         
         try:
-            try: df = pd.read_csv(csv_file, encoding='utf-8')
-            except UnicodeDecodeError: df = pd.read_csv(csv_file, encoding='cp949')
+            try: df = pd.read_csv(csv_file, encoding='utf-8-sig', dtype=str)
+            except UnicodeDecodeError: df = pd.read_csv(csv_file, encoding='cp949', dtype=str)
         except Exception as e:
             on_log(f"⚠️ {rel_path} 읽기 실패: {e}")
             continue

@@ -54,6 +54,9 @@ class LeftPanel(tk.Frame):
 
     def _on_tab_changed(self, event):
         current_idx = self.notebook.index("current")
+        if current_idx == 3: # 4. 메타 관리(PK/FK) 탭
+            if hasattr(self.tab4, "_refresh_files"):
+                self.tab4._refresh_files()
         if current_idx > 0:
             if not self.app.watcher.is_watching:
                 messagebox.showwarning("안내", "DB 설계 및 검증 기능을 사용하려면\n먼저 [1. CSV 변환] 탭에서 '백그라운드 자동 변환 모드'를 켜주세요.")

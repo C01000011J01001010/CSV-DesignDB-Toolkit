@@ -38,11 +38,20 @@ def evaluate_check_expr(val, expr):
         val_str = str(val).strip()
         try:
             numeric_val = float(val_str)
-            py_expr = expr.upper().replace("VALUE", str(numeric_val)).replace("AND", " and ").replace("OR", " or ")
+            sub_val = str(numeric_val)
         except ValueError:
-            py_expr = expr.upper().replace("VALUE", f"'{val_str}'").replace("AND", " and ").replace("OR", " or ")
-        if any(unsafe in py_expr.lower() for unsafe in ['import', 'exec', 'eval', 'os', 'sys']): return False
-        return bool(eval(py_expr))
+            sub_val = repr(val_str)
+
+        # 단어 경계()를 활용하여 연산자만 정확히 치환 (예: FOREST -> F or EST 오염 방지 및 XOR 지원)
+        e_up = expr.upper()
+        # VALUE 교체
+        e_up = re.sub(r'\bVALUE\b', sub_val, e_up)
+        e_up = re.sub(r'\bAND\b', ' and ', e_up, flags=re.IGNORECASE)
+        e_up = re.sub(r'\bOR\b', ' or ', e_up, flags=re.IGNORECASE)
+        e_up = re.sub(r'\bXOR\b', ' != ', e_up, flags=re.IGNORECASE) # 파서 관점 불리언 배타적 논리합
+
+        if any(unsafe in e_up.lower() for unsafe in ['import', 'exec', 'eval', 'os', 'sys']): return False
+        return bool(eval(e_up))
     except: return False
 
 def format_errors(invalid_series, limit=3):
